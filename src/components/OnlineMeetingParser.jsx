@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { Users, CheckCircle, XCircle, Calendar, GraduationCap, Upload } from 'lucide-react';
-import { processOnlineMeetingAttendance } from '../utils/nameParser';
+import { processOnlineMeetingAttendance, parseName, matchStudent } from '../utils/nameParser';
 import { getAllStudents, recordAttendance, addEvent } from '../db/hybridDatabase';
 import { autoGenerateFines } from '../utils/finesCalculator';
 import { parseCSV, parseExcel } from '../utils/fileParser';
@@ -20,9 +20,45 @@ export default function OnlineMeetingParser() {
   const [fineAmount, setFineAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const [importedSessionAttendees, setImportedSessionAttendees] = useState(null);
   const fileInputRef = useRef(null);
 
   const likelyNameHeaders = ['name', 'attendee', 'participant', 'full name'];
+  const sessionHeaderMap = {
+    AM_IN: ['AMIN', 'AMTIMEIN', 'MORNINGIN'],
+    AM_OUT: ['AMOUT', 'AMTIMEOUT', 'MORNINGOUT'],
+    PM_IN: ['PMIN', 'PMTIMEIN', 'AFTERNOONIN'],
+    PM_OUT: ['PMOUT', 'PMTIMEOUT', 'AFTERNOONOUT'],
+  };
+
+  const normalizeHeader = (header) => String(header || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  const detectSessionColumns = (rows) => {
+    if (!rows || rows.length === 0) return {};
+
+    const firstRow = rows[0] || {};
+    const keys = Object.keys(firstRow);
+    const detected = {};
+
+    keys.forEach((key) => {
+      const normalized = normalizeHeader(key);
+
+      Object.entries(sessionHeaderMap).forEach(([session, aliases]) => {
+        const matchedByAlias = aliases.includes(normalized);
+        const matchedByPattern =
+          (session === 'AM_IN' && normalized.includes('AM') && normalized.includes('IN') && !normalized.includes('OUT')) ||
+          (session === 'AM_OUT' && normalized.includes('AM') && normalized.includes('OUT')) ||
+          (session === 'PM_IN' && normalized.includes('PM') && normalized.includes('IN') && !normalized.includes('OUT')) ||
+          (session === 'PM_OUT' && normalized.includes('PM') && normalized.includes('OUT'));
+
+        if ((matchedByAlias || matchedByPattern) && !detected[session]) {
+          detected[session] = key;
+        }
+      });
+    });
+
+    return detected;
+  };
 
   const extractNameFromRow = (row) => {
     if (!row || typeof row !== 'object') return '';
@@ -54,6 +90,54 @@ export default function OnlineMeetingParser() {
       const lowerName = file.name.toLowerCase();
       const parsedRows = lowerName.endsWith('.csv') ? await parseCSV(file) : await parseExcel(file);
 
+      const detectedSessionColumns = detectSessionColumns(parsedRows);
+      const detectedSessionKeys = Object.keys(detectedSessionColumns);
+
+      if (detectedSessionKeys.length >= 2) {
+        const sessionData = {
+          AM_IN: [],
+          AM_OUT: [],
+          PM_IN: [],
+          PM_OUT: [],
+        };
+
+        detectedSessionKeys.forEach((session) => {
+          const column = detectedSessionColumns[session];
+          const names = parsedRows
+            .map((row) => (row && row[column] !== undefined ? String(row[column]).trim() : ''))
+            .filter((name) => name && !likelyNameHeaders.includes(name.toLowerCase()));
+
+          // Deduplicate while preserving order.
+          const seen = new Set();
+          sessionData[session] = names.filter((name) => {
+            const key = name.toUpperCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+        });
+
+        const autoSelectedSessions = sessionOptions
+          .map((option) => option.value)
+          .filter((session) => (sessionData[session] || []).length > 0);
+
+        setImportedSessionAttendees(sessionData);
+        setSelectedSessions(autoSelectedSessions.length > 0 ? autoSelectedSessions : ['AM_IN']);
+
+        // Keep textarea populated for visibility/editing (use AM IN if available, else first non-empty session).
+        const previewSession = autoSelectedSessions.includes('AM_IN')
+          ? 'AM_IN'
+          : autoSelectedSessions[0];
+        setAttendeeText((sessionData[previewSession] || []).join('\n'));
+        setResult(null);
+
+        alert(
+          `Imported session columns successfully. Detected sessions: ${autoSelectedSessions.join(', ') || 'none'}. ` +
+          'Processing will now use each session column automatically.'
+        );
+        return;
+      }
+
       const names = parsedRows
         .map(extractNameFromRow)
         .filter((name) => name && !likelyNameHeaders.includes(name.toLowerCase()));
@@ -64,6 +148,7 @@ export default function OnlineMeetingParser() {
       }
 
       setAttendeeText(names.join('\n'));
+  setImportedSessionAttendees(null);
       setResult(null);
     } catch (error) {
       alert(`Failed to import file: ${error.message}`);
@@ -86,7 +171,11 @@ export default function OnlineMeetingParser() {
   };
 
   const handleParse = async () => {
-    if (!attendeeText.trim()) {
+    const hasSessionImportData =
+      importedSessionAttendees &&
+      Object.values(importedSessionAttendees).some((sessionNames) => Array.isArray(sessionNames) && sessionNames.length > 0);
+
+    if (!attendeeText.trim() && !hasSessionImportData) {
       alert('Please enter attendee list');
       return;
     }
@@ -152,59 +241,131 @@ export default function OnlineMeetingParser() {
         description: `Online Meeting Attendance (Target: ${targetLabel})`
       });
 
-      // Process attendance
-      const parsed = processOnlineMeetingAttendance(attendeeText, students);
-
       // Record attendance for present students
       let recorded = 0;
       let skipped = 0;
+      const invalidEntries = [];
+      const presentStudentMap = new Map();
+      const absentStudentMap = new Map();
 
-      for (const student of parsed.present) {
+      if (hasSessionImportData) {
         for (const session of selectedSessions) {
-          try {
-            await recordAttendance(student.studentId, 'online', 'present', eventId, session);
-            recorded++;
-          } catch (err) {
-            skipped++;
-            console.error('Failed to record:', err.message);
+          const sessionNames = importedSessionAttendees[session] || [];
+          const presentIdsForSession = new Set();
+
+          sessionNames.forEach((name, index) => {
+            const parsedName = parseName(name);
+            if (!parsedName.isValid) {
+              invalidEntries.push({
+                lineNumber: index + 1,
+                raw: name,
+                error: `${session}: ${parsedName.error}`,
+              });
+              return;
+            }
+
+            const matched = matchStudent(parsedName, students);
+            if (!matched) {
+              invalidEntries.push({
+                lineNumber: index + 1,
+                raw: name,
+                error: `${session}: No matching student found`,
+              });
+              return;
+            }
+
+            presentIdsForSession.add(matched.studentId);
+            presentStudentMap.set(matched.studentId, matched);
+          });
+
+          for (const student of students) {
+            if (presentIdsForSession.has(student.studentId)) {
+              try {
+                await recordAttendance(student.studentId, 'online', 'present', eventId, session);
+                recorded++;
+              } catch (err) {
+                skipped++;
+                console.error('Failed to record:', err.message);
+              }
+            } else {
+              absentStudentMap.set(student.studentId, student);
+              try {
+                await recordAttendance(student.studentId, 'online', 'absent', eventId, session);
+                await autoGenerateFines(student.studentId, eventId, 'absent', {
+                  date: today,
+                  fineAmount: eventFineAmount,
+                });
+              } catch (err) {
+                console.error('Failed to record absence:', err.message);
+              }
+            }
           }
         }
-      }
 
-      // Mark absent students and generate fines
-      const allStudentIds = new Set(students.map(s => s.studentId));
-      const presentIds = new Set(parsed.present.map(s => s.studentId));
-      
-      const absentStudents = students.filter(s => !presentIds.has(s.studentId));
-      
-      let absentRecorded = 0;
-      for (const student of absentStudents) {
-        for (const session of selectedSessions) {
-          try {
-            await recordAttendance(student.studentId, 'online', 'absent', eventId, session);
-            await autoGenerateFines(student.studentId, eventId, 'absent', {
-              date: today,
-              fineAmount: eventFineAmount,
-            });
-            absentRecorded++;
-          } catch (err) {
-            console.error('Failed to record absence:', err.message);
+        const absentRecorded = students.length * selectedSessions.length - recorded - skipped;
+
+        setResult({
+          present: Array.from(presentStudentMap.values()),
+          absent: Array.from(absentStudentMap.values()),
+          invalid: invalidEntries,
+          recorded,
+          skipped,
+          absentRecorded,
+          sessionCount: selectedSessions.length,
+          selectedSessionLabels: sessionOptions
+            .filter((option) => selectedSessions.includes(option.value))
+            .map((option) => option.label),
+          sourceMode: 'session-file',
+        });
+      } else {
+        // Fallback: one attendee list used for all selected sessions.
+        const parsed = processOnlineMeetingAttendance(attendeeText, students);
+
+        for (const student of parsed.present) {
+          for (const session of selectedSessions) {
+            try {
+              await recordAttendance(student.studentId, 'online', 'present', eventId, session);
+              recorded++;
+            } catch (err) {
+              skipped++;
+              console.error('Failed to record:', err.message);
+            }
           }
         }
-      }
 
-      setResult({
-        present: parsed.present,
-        absent: absentStudents,
-        invalid: parsed.invalid,
-        recorded,
-        skipped,
-        absentRecorded,
-        sessionCount: selectedSessions.length,
-        selectedSessionLabels: sessionOptions
-          .filter((option) => selectedSessions.includes(option.value))
-          .map((option) => option.label),
-      });
+        const presentIds = new Set(parsed.present.map(s => s.studentId));
+        const absentStudents = students.filter(s => !presentIds.has(s.studentId));
+
+        let absentRecorded = 0;
+        for (const student of absentStudents) {
+          for (const session of selectedSessions) {
+            try {
+              await recordAttendance(student.studentId, 'online', 'absent', eventId, session);
+              await autoGenerateFines(student.studentId, eventId, 'absent', {
+                date: today,
+                fineAmount: eventFineAmount,
+              });
+              absentRecorded++;
+            } catch (err) {
+              console.error('Failed to record absence:', err.message);
+            }
+          }
+        }
+
+        setResult({
+          present: parsed.present,
+          absent: absentStudents,
+          invalid: parsed.invalid,
+          recorded,
+          skipped,
+          absentRecorded,
+          sessionCount: selectedSessions.length,
+          selectedSessionLabels: sessionOptions
+            .filter((option) => selectedSessions.includes(option.value))
+            .map((option) => option.label),
+          sourceMode: 'single-list',
+        });
+      }
     } catch (error) {
       alert('Error processing attendance: ' + error.message);
     } finally {
@@ -218,6 +379,7 @@ export default function OnlineMeetingParser() {
     setYearLevel('all');
     setSelectedSessions(['AM_IN']);
     setFineAmount('');
+    setImportedSessionAttendees(null);
     setResult(null);
   };
 
@@ -360,6 +522,11 @@ export default function OnlineMeetingParser() {
         <p className="mt-1 text-xs text-blue-600">
           You can import `.xlsx`, `.xls`, or `.csv` attendee files. The system will use name/attendee columns automatically.
         </p>
+        {importedSessionAttendees && (
+          <p className="mt-1 text-xs text-indigo-700 bg-indigo-50 border border-indigo-200 rounded px-2 py-1 inline-block">
+            Session-based import detected. Processing will use AM/PM IN/OUT columns automatically.
+          </p>
+        )}
         <p className="mt-1 text-xs text-amber-600">
           ⚠️ Last and First names must match EXACTLY with database.
           Middle name/initial is <strong>OPTIONAL</strong> - will match with or without it.
@@ -393,6 +560,7 @@ export default function OnlineMeetingParser() {
             <h3 className="font-semibold text-blue-900 mb-2">Summary</h3>
             <ul className="space-y-1 text-sm text-blue-700">
               <li>Target: {yearLevel === 'all' ? 'All Members' : `${yearLevel}${yearLevel === '1' ? 'st' : yearLevel === '2' ? 'nd' : yearLevel === '3' ? 'rd' : 'th'} Year Only`}</li>
+              <li>Source: {result.sourceMode === 'session-file' ? 'Imported session columns (AM/PM)' : 'Single attendee list'}</li>
               <li>Sessions: {result.selectedSessionLabels?.join(', ')} ({result.sessionCount} total)</li>
               <li>Present: {result.present.length} ({result.recorded} records saved, {result.skipped} skipped)</li>
               <li>Absent: {result.absent.length} ({result.absentRecorded} absence records + fines saved)</li>
