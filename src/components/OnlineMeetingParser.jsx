@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
-import { Users, CheckCircle, XCircle, Calendar, GraduationCap } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Users, CheckCircle, XCircle, Calendar, GraduationCap, Upload } from 'lucide-react';
 import { processOnlineMeetingAttendance } from '../utils/nameParser';
 import { getAllStudents, recordAttendance, addEvent } from '../db/hybridDatabase';
 import { autoGenerateFines } from '../utils/finesCalculator';
+import { parseCSV, parseExcel } from '../utils/fileParser';
 
 export default function OnlineMeetingParser() {
   const sessionOptions = [
@@ -19,6 +20,58 @@ export default function OnlineMeetingParser() {
   const [fineAmount, setFineAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const likelyNameHeaders = ['name', 'attendee', 'participant', 'full name'];
+
+  const extractNameFromRow = (row) => {
+    if (!row || typeof row !== 'object') return '';
+
+    const entries = Object.entries(row).filter(([, value]) => value !== null && value !== undefined && String(value).trim() !== '');
+    if (entries.length === 0) return '';
+
+    // Prefer common name-like headers first.
+    for (const [key, value] of entries) {
+      const normalizedKey = String(key).toLowerCase();
+      if (likelyNameHeaders.some((header) => normalizedKey.includes(header))) {
+        return String(value).trim();
+      }
+    }
+
+    // Fall back to first non-empty value.
+    return String(entries[0][1]).trim();
+  };
+
+  const handleImportFileClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleImportFile = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const lowerName = file.name.toLowerCase();
+      const parsedRows = lowerName.endsWith('.csv') ? await parseCSV(file) : await parseExcel(file);
+
+      const names = parsedRows
+        .map(extractNameFromRow)
+        .filter((name) => name && !likelyNameHeaders.includes(name.toLowerCase()));
+
+      if (names.length === 0) {
+        alert('No attendee names found in file. Please use a column with attendee names.');
+        return;
+      }
+
+      setAttendeeText(names.join('\n'));
+      setResult(null);
+    } catch (error) {
+      alert(`Failed to import file: ${error.message}`);
+    } finally {
+      // Allow selecting the same file again if needed.
+      event.target.value = '';
+    }
+  };
 
   const toggleSession = (sessionValue) => {
     setSelectedSessions((prev) => {
@@ -270,9 +323,27 @@ export default function OnlineMeetingParser() {
 
       {/* Input Area */}
       <div className="mb-4">
-        <label className="block mb-2 font-medium text-gray-700">
-          Paste Attendee List (One per line)
-        </label>
+        <div className="flex items-center justify-between mb-2 gap-3">
+          <label className="block font-medium text-gray-700">
+            Paste Attendee List (One per line)
+          </label>
+          <button
+            type="button"
+            onClick={handleImportFileClick}
+            disabled={processing}
+            className="inline-flex items-center gap-2 px-3 py-2 text-xs sm:text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Upload className="w-4 h-4" />
+            Import Excel/CSV
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+        </div>
         <textarea
           value={attendeeText}
           onChange={(e) => setAttendeeText(e.target.value)}
@@ -285,6 +356,9 @@ export default function OnlineMeetingParser() {
           Format: LASTNAME, FIRSTNAME [MIDDLE] (comma preferred but optional)
           <br/>
           <span className="text-xs text-gray-400">Tags like (Unverified) are automatically removed. Names without commas will be parsed intelligently.</span>
+        </p>
+        <p className="mt-1 text-xs text-blue-600">
+          You can import `.xlsx`, `.xls`, or `.csv` attendee files. The system will use name/attendee columns automatically.
         </p>
         <p className="mt-1 text-xs text-amber-600">
           ⚠️ Last and First names must match EXACTLY with database.
