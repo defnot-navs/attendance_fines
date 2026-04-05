@@ -5,12 +5,32 @@ import { getAllStudents, recordAttendance, addEvent } from '../db/hybridDatabase
 import { autoGenerateFines } from '../utils/finesCalculator';
 
 export default function OnlineMeetingParser() {
+  const sessionOptions = [
+    { value: 'AM_IN', label: 'AM IN' },
+    { value: 'AM_OUT', label: 'AM OUT' },
+    { value: 'PM_IN', label: 'PM IN' },
+    { value: 'PM_OUT', label: 'PM OUT' },
+  ];
+
   const [attendeeText, setAttendeeText] = useState('');
   const [eventTitle, setEventTitle] = useState('');
   const [yearLevel, setYearLevel] = useState('all');
+  const [selectedSessions, setSelectedSessions] = useState(['AM_IN']);
   const [fineAmount, setFineAmount] = useState('');
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState(null);
+
+  const toggleSession = (sessionValue) => {
+    setSelectedSessions((prev) => {
+      if (prev.includes(sessionValue)) {
+        // Keep at least one session selected.
+        if (prev.length === 1) return prev;
+        return prev.filter((value) => value !== sessionValue);
+      }
+
+      return [...prev, sessionValue];
+    });
+  };
 
   const handleParse = async () => {
     if (!attendeeText.trim()) {
@@ -20,6 +40,11 @@ export default function OnlineMeetingParser() {
 
     if (!eventTitle.trim()) {
       alert('Please enter event title');
+      return;
+    }
+
+    if (selectedSessions.length === 0) {
+      alert('Please select at least one attendance session');
       return;
     }
 
@@ -82,12 +107,14 @@ export default function OnlineMeetingParser() {
       let skipped = 0;
 
       for (const student of parsed.present) {
-        try {
-          await recordAttendance(student.studentId, 'online', 'present', eventId);
-          recorded++;
-        } catch (err) {
-          skipped++;
-          console.error('Failed to record:', err.message);
+        for (const session of selectedSessions) {
+          try {
+            await recordAttendance(student.studentId, 'online', 'present', eventId, session);
+            recorded++;
+          } catch (err) {
+            skipped++;
+            console.error('Failed to record:', err.message);
+          }
         }
       }
 
@@ -99,15 +126,17 @@ export default function OnlineMeetingParser() {
       
       let absentRecorded = 0;
       for (const student of absentStudents) {
-        try {
-          await recordAttendance(student.studentId, 'online', 'absent', eventId);
-          await autoGenerateFines(student.studentId, eventId, 'absent', {
-            date: today,
-            fineAmount: eventFineAmount,
-          });
-          absentRecorded++;
-        } catch (err) {
-          console.error('Failed to record absence:', err.message);
+        for (const session of selectedSessions) {
+          try {
+            await recordAttendance(student.studentId, 'online', 'absent', eventId, session);
+            await autoGenerateFines(student.studentId, eventId, 'absent', {
+              date: today,
+              fineAmount: eventFineAmount,
+            });
+            absentRecorded++;
+          } catch (err) {
+            console.error('Failed to record absence:', err.message);
+          }
         }
       }
 
@@ -117,7 +146,11 @@ export default function OnlineMeetingParser() {
         invalid: parsed.invalid,
         recorded,
         skipped,
-        absentRecorded
+        absentRecorded,
+        sessionCount: selectedSessions.length,
+        selectedSessionLabels: sessionOptions
+          .filter((option) => selectedSessions.includes(option.value))
+          .map((option) => option.label),
       });
     } catch (error) {
       alert('Error processing attendance: ' + error.message);
@@ -130,6 +163,7 @@ export default function OnlineMeetingParser() {
     setAttendeeText('');
     setEventTitle('');
     setYearLevel('all');
+    setSelectedSessions(['AM_IN']);
     setFineAmount('');
     setResult(null);
   };
@@ -157,6 +191,37 @@ export default function OnlineMeetingParser() {
         />
         <p className="mt-1 text-xs text-gray-500">
           This will appear in the fines breakdown
+        </p>
+      </div>
+
+      {/* Attendance Sessions */}
+      <div className="mb-4">
+        <label className="block mb-2 font-medium text-gray-700">
+          Attendance Sessions for This Event
+        </label>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {sessionOptions.map((session) => (
+            <label
+              key={session.value}
+              className={`flex items-center gap-2 px-3 py-2 border rounded-lg cursor-pointer select-none ${
+                selectedSessions.includes(session.value)
+                  ? 'border-blue-500 bg-blue-50 text-blue-700'
+                  : 'border-gray-300 bg-white text-gray-700'
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={selectedSessions.includes(session.value)}
+                onChange={() => toggleSession(session.value)}
+                disabled={processing || (selectedSessions.length === 1 && selectedSessions.includes(session.value))}
+                className="rounded border-gray-300"
+              />
+              <span className="text-sm font-medium">{session.label}</span>
+            </label>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-gray-500">
+          Fines are applied per missed session. Example: selecting 4 sessions applies up to 4x absent fine per absent student.
         </p>
       </div>
 
@@ -254,8 +319,9 @@ export default function OnlineMeetingParser() {
             <h3 className="font-semibold text-blue-900 mb-2">Summary</h3>
             <ul className="space-y-1 text-sm text-blue-700">
               <li>Target: {yearLevel === 'all' ? 'All Members' : `${yearLevel}${yearLevel === '1' ? 'st' : yearLevel === '2' ? 'nd' : yearLevel === '3' ? 'rd' : 'th'} Year Only`}</li>
-              <li>Present: {result.present.length} ({result.recorded} recorded, {result.skipped} skipped)</li>
-              <li>Absent: {result.absent.length} ({result.absentRecorded} recorded)</li>
+              <li>Sessions: {result.selectedSessionLabels?.join(', ')} ({result.sessionCount} total)</li>
+              <li>Present: {result.present.length} ({result.recorded} records saved, {result.skipped} skipped)</li>
+              <li>Absent: {result.absent.length} ({result.absentRecorded} absence records + fines saved)</li>
               <li>Invalid format: {result.invalid.length}</li>
             </ul>
           </div>
