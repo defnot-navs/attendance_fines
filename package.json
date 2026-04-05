@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "smoke:prod": "node scripts/smoke-test.mjs",
+    "smoke:render": "node scripts/smoke-test.mjs https://attendance-fines.onrender.com/api",
     "server": "node server/index.js",
     "server:mongo": "node server/index-mongo.js",
     "migrate:mysql-to-mongo": "node server/migrate-mysql-to-mongo.js",
