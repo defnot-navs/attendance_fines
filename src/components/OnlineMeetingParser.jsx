@@ -294,6 +294,7 @@ export default function OnlineMeetingParser() {
                 await autoGenerateFines(student.studentId, eventId, 'absent', {
                   date: today,
                   fineAmount: eventFineAmount,
+                  session,
                 });
               } catch (err) {
                 console.error('Failed to record absence:', err.message);
@@ -344,6 +345,7 @@ export default function OnlineMeetingParser() {
               await autoGenerateFines(student.studentId, eventId, 'absent', {
                 date: today,
                 fineAmount: eventFineAmount,
+                session,
               });
               absentRecorded++;
             } catch (err) {

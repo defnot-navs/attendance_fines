@@ -68,6 +68,13 @@ export async function autoGenerateFines(studentId, eventId = null, status = 'lat
   
   let fineAmount = 0;
   let fineReason = '';
+  const sessionLabelMap = {
+    AM_IN: 'AM IN',
+    AM_OUT: 'AM OUT',
+    PM_IN: 'PM IN',
+    PM_OUT: 'PM OUT',
+  };
+  const sessionLabel = eventMeta?.session ? sessionLabelMap[eventMeta.session] || eventMeta.session : null;
   
   // Check if event has custom fine amount
   const eventFineAmount = (eventMeta && Number(eventMeta.fineAmount) > 0)
@@ -77,7 +84,7 @@ export async function autoGenerateFines(studentId, eventId = null, status = 'lat
   if (status === 'absent') {
     // Use event-specific fine if available, otherwise use default from settings
     fineAmount = eventFineAmount || ruleMap.absent || 0;
-    fineReason = 'Absent';
+    fineReason = sessionLabel ? `Absent - ${sessionLabel}` : 'Absent';
   } else if (status === 'late') {
     // For late: use 75% of event fine or default late fine from settings
     if (eventFineAmount) {
@@ -85,7 +92,7 @@ export async function autoGenerateFines(studentId, eventId = null, status = 'lat
     } else {
       fineAmount = ruleMap.late || 0;
     }
-    fineReason = 'Late Arrival';
+    fineReason = sessionLabel ? `Late Arrival - ${sessionLabel}` : 'Late Arrival';
   }
   
   if (fineAmount > 0) {
