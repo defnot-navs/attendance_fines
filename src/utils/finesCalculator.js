@@ -8,6 +8,7 @@ import {
   getFineRules, 
   recordFine,
   getStudentFines,
+  getAllFines,
 } from '../db/hybridDatabase';
 
 /**
@@ -97,13 +98,23 @@ export async function autoGenerateFines(studentId, eventId = null, status = 'lat
  */
 export async function getAllStudentsFinesSummary(students) {
   const summary = [];
+  const allFines = await getAllFines();
+  const finesByStudentId = new Map();
+
+  for (const fine of allFines) {
+    const key = fine.studentId;
+    if (!finesByStudentId.has(key)) {
+      finesByStudentId.set(key, []);
+    }
+    finesByStudentId.get(key).push(fine);
+  }
 
   for (const student of students) {
-    const fines = await getStudentFines(student.studentId);
+    const fines = finesByStudentId.get(student.studentId) || [];
     const totalFines = fines.reduce((sum, fine) => sum + fine.amount, 0);
     const paidFines = fines.filter(f => f.paid).reduce((sum, fine) => sum + fine.amount, 0);
     const unpaidFines = fines.filter(f => !f.paid).reduce((sum, fine) => sum + fine.amount, 0);
-    
+
     summary.push({
       studentId: student.studentId,
       name: `${student.lastName}, ${student.firstName} ${student.middleInitial}`,
