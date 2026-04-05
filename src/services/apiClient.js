@@ -185,6 +185,25 @@ class APIClient {
     });
   }
 
+  async markFineAsUnpaid(id) {
+    return this.request(`/fines/${id}/unpay`, {
+      method: 'PUT',
+    });
+  }
+
+  async updateFine(id, updates) {
+    return this.request(`/fines/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteFine(id) {
+    return this.request(`/fines/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async clearAllFines() {
     return this.request('/fines', {
       method: 'DELETE',

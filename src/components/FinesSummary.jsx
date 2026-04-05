@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, db, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, getAllMembershipPayments } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, db, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 
@@ -204,6 +204,71 @@ export default function FinesSummary() {
       setTimeout(() => setResult(null), 2500);
     } catch (error) {
       setResult({ success: false, message: `Error updating fine status: ${error.message}` });
+      setTimeout(() => setResult(null), 3000);
+    }
+  };
+
+  const handleMarkStudentFinesAsPaid = async (studentId) => {
+    try {
+      const fines = await getStudentFines(studentId);
+      const unpaid = fines.filter((fine) => !fine.paid);
+
+      if (unpaid.length === 0) {
+        setResult({ success: false, message: 'No unpaid fines for this student.' });
+        setTimeout(() => setResult(null), 2500);
+        return;
+      }
+
+      for (const fine of unpaid) {
+        await markFineAsPaid(fine.id);
+      }
+
+      setResult({ success: true, message: `Marked ${unpaid.length} fine(s) as PAID for ${studentId}.` });
+      await loadData();
+      setTimeout(() => setResult(null), 2500);
+    } catch (error) {
+      setResult({ success: false, message: `Error updating student fines: ${error.message}` });
+      setTimeout(() => setResult(null), 3000);
+    }
+  };
+
+  const handleEditFine = async (fine) => {
+    const nextAmountInput = prompt('Edit fine amount:', String(fine.amount));
+    if (nextAmountInput === null) return;
+
+    const nextAmount = Number(nextAmountInput);
+    if (!Number.isFinite(nextAmount) || nextAmount < 0) {
+      alert('Invalid fine amount.');
+      return;
+    }
+
+    const nextReason = prompt('Edit fine reason:', String(fine.reason || ''));
+    if (nextReason === null) return;
+
+    try {
+      await updateFine(fine.id, { amount: nextAmount, reason: nextReason });
+      setResult({ success: true, message: 'Fine updated successfully.' });
+      await loadData();
+      setTimeout(() => setResult(null), 2500);
+    } catch (error) {
+      setResult({ success: false, message: `Error editing fine: ${error.message}` });
+      setTimeout(() => setResult(null), 3000);
+    }
+  };
+
+  const handleDeleteFine = async (fine) => {
+    const confirmed = confirm(
+      `Delete this fine?\n\nReason: ${fine.reason}\nAmount: ${formatCurrency(fine.amount)}\nDate: ${fine.date || '-'}\n\nThis cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteFine(fine.id);
+      setResult({ success: true, message: 'Fine deleted successfully.' });
+      await loadData();
+      setTimeout(() => setResult(null), 2500);
+    } catch (error) {
+      setResult({ success: false, message: `Error deleting fine: ${error.message}` });
       setTimeout(() => setResult(null), 3000);
     }
   };
@@ -421,6 +486,7 @@ export default function FinesSummary() {
                   <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Count</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-indigo-700">Membership</th>
                   <th className="px-4 py-3 text-right text-sm font-semibold text-orange-700">Total Dues</th>
+                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -511,10 +577,27 @@ export default function FinesSummary() {
                             {formatCurrency(student.totalDues || 0)}
                           </span>
                         </td>
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex items-center justify-center gap-2">
+                            <button
+                              onClick={() => handleMarkStudentFinesAsPaid(student.studentId)}
+                              disabled={student.unpaidFines <= 0}
+                              className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800 hover:bg-green-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                            >
+                              Mark Paid
+                            </button>
+                            <button
+                              onClick={() => toggleStudent(student.studentId)}
+                              className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
+                            >
+                              {isExpanded ? 'Hide' : 'View'}
+                            </button>
+                          </div>
+                        </td>
                       </tr>
                       {isExpanded && (studentAttendance.length > 0 || studentFinesDetailed.length > 0) && (
                         <tr>
-                          <td colSpan="10" className="px-4 py-3 bg-gray-50">
+                          <td colSpan="11" className="px-4 py-3 bg-gray-50">
                             <div className="text-sm">
                               <h4 className="font-semibold text-gray-900 mb-3">Attendance Records for {student.name}</h4>
                               <div className="bg-white rounded-lg border overflow-hidden">
@@ -588,16 +671,30 @@ export default function FinesSummary() {
                                             </span>
                                           </td>
                                           <td className="px-3 py-2 text-center">
-                                            <button
-                                              onClick={() => handleToggleFinePayment(fine)}
-                                              className={`px-2 py-1 text-xs font-medium rounded ${
-                                                fine.paid
-                                                  ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                                                  : 'bg-green-100 text-green-800 hover:bg-green-200'
-                                              }`}
-                                            >
-                                              {fine.paid ? 'Mark Unpaid' : 'Mark Paid'}
-                                            </button>
+                                            <div className="flex items-center justify-center gap-1">
+                                              <button
+                                                onClick={() => handleToggleFinePayment(fine)}
+                                                className={`px-2 py-1 text-xs font-medium rounded ${
+                                                  fine.paid
+                                                    ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                                                    : 'bg-green-100 text-green-800 hover:bg-green-200'
+                                                }`}
+                                              >
+                                                {fine.paid ? 'Unpay' : 'Pay'}
+                                              </button>
+                                              <button
+                                                onClick={() => handleEditFine(fine)}
+                                                className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
+                                              >
+                                                Edit
+                                              </button>
+                                              <button
+                                                onClick={() => handleDeleteFine(fine)}
+                                                className="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
+                                              >
+                                                Delete
+                                              </button>
+                                            </div>
                                           </td>
                                         </tr>
                                       ))}

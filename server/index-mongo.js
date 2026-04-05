@@ -585,6 +585,39 @@ app.put('/api/fines/:id/pay', async (req, res) => {
   }
 });
 
+app.put('/api/fines/:id/unpay', async (req, res) => {
+  try {
+    await Fine.findByIdAndUpdate(req.params.id, { $set: { paid: false, paid_at: null } });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/fines/:id', async (req, res) => {
+  const { amount, reason, date } = req.body;
+  try {
+    const patch = {};
+    if (amount !== undefined) patch.amount = Number(amount);
+    if (reason !== undefined) patch.reason = String(reason);
+    if (date !== undefined) patch.date = String(date);
+
+    await Fine.findByIdAndUpdate(req.params.id, { $set: patch });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/fines/:id', async (req, res) => {
+  try {
+    await Fine.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.delete('/api/fines', async (req, res) => {
   try {
     await Fine.deleteMany({});

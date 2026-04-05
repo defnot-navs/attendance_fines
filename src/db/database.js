@@ -540,6 +540,43 @@ export async function markFineAsUnpaid(fineId) {
 }
 
 /**
+ * Update fine details
+ */
+export async function updateFine(fineId, updates) {
+  try {
+    const patch = {};
+    if (updates.amount !== undefined) {
+      patch.amount = parseFloat(updates.amount);
+    }
+    if (updates.reason !== undefined) {
+      patch.reason = String(updates.reason);
+    }
+    if (updates.date !== undefined) {
+      patch.date = String(updates.date);
+    }
+
+    await db.fines.update(fineId, patch);
+    return true;
+  } catch (error) {
+    console.error('Error updating fine:', error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a single fine
+ */
+export async function deleteFine(fineId) {
+  try {
+    await db.fines.delete(fineId);
+    return true;
+  } catch (error) {
+    console.error('Error deleting fine:', error);
+    throw error;
+  }
+}
+
+/**
  * Mark all fines as paid
  */
 export async function markAllFinesAsPaid() {

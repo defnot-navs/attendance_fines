@@ -502,6 +502,93 @@ export async function clearAllFines() {
   return clearLocal();
 }
 
+export async function markFineAsPaid(fineId) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.markFineAsPaid(fineId);
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { markFineAsPaid: markPaidLocal } = await import('./database');
+  return markPaidLocal(fineId);
+}
+
+export async function markFineAsUnpaid(fineId) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.markFineAsUnpaid(fineId);
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { markFineAsUnpaid: markUnpaidLocal } = await import('./database');
+  return markUnpaidLocal(fineId);
+}
+
+export async function markAllFinesAsPaid() {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      const fines = await apiClient.getAllFines();
+      const unpaid = fines.filter((f) => !f.paid);
+
+      for (const fine of unpaid) {
+        await apiClient.markFineAsPaid(fine.id);
+      }
+
+      return unpaid.length;
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { markAllFinesAsPaid: markAllLocal } = await import('./database');
+  return markAllLocal();
+}
+
+export async function updateFine(fineId, updates) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.updateFine(fineId, updates);
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { updateFine: updateFineLocal } = await import('./database');
+  return updateFineLocal(fineId, updates);
+}
+
+export async function deleteFine(fineId) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.deleteFine(fineId);
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { deleteFine: deleteFineLocal } = await import('./database');
+  return deleteFineLocal(fineId);
+}
+
 // ===== FINE RULES =====
 
 export async function getFineRules() {

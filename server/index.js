@@ -578,6 +578,44 @@ app.put('/api/fines/:id/pay', async (req, res) => {
   }
 });
 
+app.put('/api/fines/:id/unpay', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+  try {
+    await pool.query('UPDATE fines SET paid = FALSE, paid_at = NULL WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/fines/:id', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+  const { amount, reason, date } = req.body;
+
+  try {
+    await pool.query(
+      'UPDATE fines SET amount = COALESCE(?, amount), reason = COALESCE(?, reason), date = COALESCE(?, date) WHERE id = ?',
+      [amount ?? null, reason ?? null, date ?? null, req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/fines/:id', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+  try {
+    await pool.query('DELETE FROM fines WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Clear all fines
 app.delete('/api/fines', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not available' });
