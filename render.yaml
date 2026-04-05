@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: attendance-fines-api
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run server:mongo
+    autoDeploy: true
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: PORT
+        value: 10000
+      - key: NODE_ENV
+        value: production
