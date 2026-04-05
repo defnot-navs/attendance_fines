@@ -208,6 +208,14 @@ const mapMembership = (doc, student) => ({
   program: student?.program,
 });
 
+function formatErrorMessage(error, fallback) {
+  const message =
+    (error && typeof error.message === 'string' && error.message.trim()) ||
+    (error && typeof error.code === 'string' && error.code.trim()) ||
+    fallback;
+  return message;
+}
+
 function ensureDb(req, res, next) {
   if (!dbReady) return res.status(503).json({ error: 'Database not available' });
   next();
@@ -279,9 +287,21 @@ app.post('/api/students', async (req, res) => {
 app.get('/api/students', async (req, res) => {
   try {
     const rows = await Student.find().sort({ last_name: 1, first_name: 1 }).lean();
-    res.json(rows.map(mapStudent));
+    const mappedRows = rows
+      .map((row) => {
+        try {
+          return mapStudent(row);
+        } catch (mapError) {
+          console.error('Failed to map student row:', mapError, row);
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    res.json(mappedRows);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('GET /api/students failed:', error);
+    res.status(500).json({ error: formatErrorMessage(error, 'Failed to fetch students') });
   }
 });
 
@@ -289,9 +309,27 @@ app.get('/api/students/:studentId', async (req, res) => {
   try {
     const student = await Student.findOne({ student_id: req.params.studentId }).lean();
     if (!student) return res.status(404).json({ error: 'Student not found' });
-    res.json(mapStudent(student));
+    try {
+      res.json(mapStudent(student));
+    } catch (mapError) {
+      // Fallback response shape to avoid a hard failure on malformed records.
+      console.error('Failed to map student record:', mapError, student);
+      res.json({
+        id: toId(student._id),
+        student_id: student.student_id,
+        last_name: student.last_name || '',
+        first_name: student.first_name || '',
+        middle_initial: student.middle_initial || '',
+        year_level: student.year_level || 1,
+        program: student.program || '',
+        email: student.email || '',
+        created_at: student.created_at || null,
+        updated_at: student.updated_at || null,
+      });
+    }
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error(`GET /api/students/${req.params.studentId} failed:`, error);
+    res.status(500).json({ error: formatErrorMessage(error, 'Failed to fetch student') });
   }
 });
 
