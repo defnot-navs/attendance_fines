@@ -10,7 +10,8 @@
     "server": "node server/index.js",
     "server:mongo": "node server/index-mongo.js",
     "migrate:mysql-to-mongo": "node server/migrate-mysql-to-mongo.js",
-    "start": "concurrently \"npm run server\" \"npm run dev\"",
+    "start": "npm run server:mongo",
+    "start:full": "concurrently \"npm run server\" \"npm run dev\"",
     "start:mongo": "concurrently \"npm run server:mongo\" \"npm run dev\"",
     "start:server": "node server/index.js",
     "start:client": "vite"
