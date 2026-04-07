@@ -4,6 +4,7 @@ import { getStudentByStudentId, getStudentAttendance, getStudentFines, getAllEve
 import { cacheStudentPortalSnapshot } from '../db/database';
 import { formatCurrency } from '../utils/finesCalculator';
 import { formatTime12Hour } from '../utils/timeFormatter';
+import DataTable from '../components/common/DataTable';
 
 export default function StudentView() {
   const [studentId, setStudentId] = useState('');
@@ -95,6 +96,66 @@ export default function StudentView() {
     const targetYear = Number(match[1]);
     return Number.isFinite(targetYear) ? targetYear : null;
   };
+
+  const normalizeId = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    return String(value);
+  };
+
+  const findEventName = (eventId) => (
+    events.find((e) => normalizeId(e.id) === normalizeId(eventId))?.name || 'General / No Event'
+  );
+
+  const attendanceColumns = [
+    { key: 'date', header: 'Date', sortable: true, accessor: (row) => row.date },
+    {
+      key: 'event',
+      header: 'Event',
+      sortable: true,
+      accessor: (row) => findEventName(row.eventId),
+      render: (row) => findEventName(row.eventId),
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      sortable: true,
+      accessor: (row) => row.type,
+      render: (row) => String(row.type || '').toUpperCase(),
+      cellClassName: 'text-gray-600',
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      accessor: (row) => row.status,
+      render: (row) => (
+        <span className={`px-2 py-1 text-xs font-medium rounded ${getStatusBadge(row.status)}`}>
+          {String(row.status || '').toUpperCase()}
+        </span>
+      ),
+    },
+  ];
+
+  const fineColumns = [
+    { key: 'date', header: 'Date', sortable: true, accessor: (row) => row.date },
+    {
+      key: 'event',
+      header: 'Event',
+      sortable: true,
+      accessor: (row) => findEventName(row.eventId),
+      render: (row) => findEventName(row.eventId),
+    },
+    { key: 'reason', header: 'Reason', sortable: true, accessor: (row) => row.reason, cellClassName: 'text-gray-600' },
+    {
+      key: 'amount',
+      header: 'Amount',
+      sortable: true,
+      accessor: (row) => Number(row.amount || 0),
+      render: (row) => <span className="font-semibold text-red-600">{formatCurrency(row.amount)}</span>,
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+    },
+  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-8 px-4">
@@ -194,37 +255,15 @@ export default function StudentView() {
               {attendance.length === 0 ? (
                 <p className="text-gray-500 text-center py-8">No attendance records found</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Event</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Type</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {attendance.map((record, idx) => {
-                        const eventName = events.find(e => e.id === record.eventId)?.name || 'General / No Event';
-
-                        return (
-                        <tr key={idx} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm text-gray-900">{record.date}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">{eventName}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {record.type.toUpperCase()}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`px-2 py-1 text-xs font-medium rounded ${getStatusBadge(record.status)}`}>
-                              {record.status.toUpperCase()}
-                            </span>
-                          </td>
-                        </tr>
-                      )})}
-                    </tbody>
-                  </table>
-                </div>
+                <DataTable
+                  columns={attendanceColumns}
+                  data={attendance}
+                  rowKey={(row) => row.id}
+                  initialSortKey="date"
+                  initialSortDirection="desc"
+                  pageSize={10}
+                  tableClassName="w-full"
+                />
               )}
             </div>
 
@@ -337,43 +376,20 @@ export default function StudentView() {
                   <p className="text-gray-500 text-sm mt-1">Keep up the good attendance!</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Date</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Event</th>
-                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Reason</th>
-                        <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                      {fines.map((fine, idx) => {
-                        const eventName = events.find(e => e.id === fine.eventId)?.name || 'General / No Event';
-
-                        return (
-                        <tr key={idx} className="hover:bg-gray-50">
-                          <td className="px-4 py-3 text-sm text-gray-900">{fine.date}</td>
-                          <td className="px-4 py-3 text-sm text-gray-700">{eventName}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{fine.reason}</td>
-                          <td className="px-4 py-3 text-sm text-right font-semibold text-red-600">
-                            {formatCurrency(fine.amount)}
-                          </td>
-                        </tr>
-                      )})}
-                    </tbody>
-                    <tfoot className="bg-gray-50 border-t">
-                      <tr>
-                        <td colSpan="3" className="px-4 py-3 text-right font-semibold text-gray-900">
-                          Total:
-                        </td>
-                        <td className="px-4 py-3 text-right text-lg font-bold text-red-600">
-                          {formatCurrency(totalFines)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                <>
+                  <DataTable
+                    columns={fineColumns}
+                    data={fines}
+                    rowKey={(row) => row.id}
+                    initialSortKey="date"
+                    initialSortDirection="desc"
+                    pageSize={10}
+                    tableClassName="w-full"
+                  />
+                  <div className="mt-2 px-2 text-right text-sm font-semibold text-gray-900">
+                    Total: <span className="text-lg font-bold text-red-600">{formatCurrency(totalFines)}</span>
+                  </div>
+                </>
               )}
             </div>
           </div>

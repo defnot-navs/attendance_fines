@@ -10,6 +10,7 @@ import {
   addStudent
 } from '../db/hybridDatabase';
 import { formatCurrency } from '../utils/finesCalculator';
+import DataTable from './common/DataTable';
 
 export default function MembershipRegistration() {
   const [payments, setPayments] = useState([]);
@@ -419,6 +420,114 @@ export default function MembershipRegistration() {
     pendingAmount: payments.filter(p => !p.paid).reduce((sum, p) => sum + p.amount, 0)
   };
 
+  const membershipColumns = [
+    {
+      key: 'studentId',
+      header: 'Student ID',
+      sortable: true,
+      accessor: (row) => row.studentId,
+      cellClassName: 'font-medium',
+    },
+    {
+      key: 'name',
+      header: 'Name',
+      sortable: true,
+      accessor: (row) => row.name,
+    },
+    {
+      key: 'program',
+      header: 'Program',
+      sortable: true,
+      accessor: (row) => row.program,
+      cellClassName: 'text-gray-600',
+    },
+    {
+      key: 'yearLevel',
+      header: 'Year',
+      sortable: true,
+      accessor: (row) => row.yearLevel,
+      render: (row) => row.yearLevel ? `${row.yearLevel}${['st', 'nd', 'rd', 'th'][row.yearLevel > 3 ? 3 : row.yearLevel - 1]}` : '-',
+      cellClassName: 'text-gray-600',
+    },
+    {
+      key: 'amount',
+      header: 'Amount',
+      sortable: true,
+      accessor: (row) => Number(row.amount || 0),
+      render: (row) => <span className="font-semibold">{formatCurrency(row.amount)}</span>,
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      accessor: (row) => row.paid ? 'Paid' : 'Unpaid',
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
+      render: (row) => row.paid ? (
+        <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
+          <CheckCircle className="w-3 h-3" />
+          Paid
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
+          <XCircle className="w-3 h-3" />
+          Unpaid
+        </span>
+      ),
+    },
+    {
+      key: 'paymentInfo',
+      header: 'Payment Info',
+      sortable: true,
+      accessor: (row) => row.paidAt || '',
+      render: (row) => row.paid ? (
+        <div className="text-xs">
+          <div className="font-medium">{row.paymentMethod}</div>
+          {row.receiptNumber && <div className="text-gray-500">OR# {row.receiptNumber}</div>}
+          <div className="text-gray-400">{new Date(row.paidAt).toLocaleDateString()}</div>
+        </div>
+      ) : (
+        <span className="text-gray-400">-</span>
+      ),
+      cellClassName: 'text-gray-600',
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      sortable: false,
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (row) => (
+        <div className="flex items-center justify-end gap-2">
+          {row.paid ? (
+            <button
+              onClick={() => handleMarkAsUnpaid(row)}
+              className="text-red-600 hover:text-red-800 text-sm font-medium"
+            >
+              Mark Unpaid
+            </button>
+          ) : (
+            <button
+              onClick={() => handleMarkAsPaid(row)}
+              className="text-green-600 hover:text-green-800 text-sm font-medium"
+            >
+              Mark Paid
+            </button>
+          )}
+          <button
+            onClick={() => handleDeletePayment(row)}
+            className="p-1 text-red-600 hover:bg-red-50 rounded"
+            title="Delete payment record"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      ),
+    },
+  ];
+
   return (
     <div className="max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-3">
@@ -605,102 +714,20 @@ export default function MembershipRegistration() {
       </div>
 
       {/* Table */}
-      {loading ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500">Loading...</p>
-        </div>
-      ) : filteredPayments.length === 0 ? (
-        <div className="text-center py-12 bg-gray-50 rounded-lg">
-          <Users className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-          <p className="text-gray-600">
-            {payments.length === 0 
-              ? 'No payment records. Click "Initialize Payments" to create records for all students.' 
-              : 'No members found matching your search'}
-          </p>
-        </div>
-      ) : (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Student ID</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Program</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Year</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Amount</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Status</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Payment Info</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredPayments.map((payment) => (
-                  <tr key={payment.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-900 font-medium">{payment.studentId}</td>
-                    <td className="px-4 py-3 text-sm text-gray-900">{payment.name}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">{payment.program}</td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {payment.yearLevel ? `${payment.yearLevel}${['st', 'nd', 'rd', 'th'][payment.yearLevel > 3 ? 3 : payment.yearLevel - 1]}` : '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-right font-semibold">{formatCurrency(payment.amount)}</td>
-                    <td className="px-4 py-3 text-center">
-                      {payment.paid ? (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-medium">
-                          <CheckCircle className="w-3 h-3" />
-                          Paid
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium">
-                          <XCircle className="w-3 h-3" />
-                          Unpaid
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {payment.paid ? (
-                        <div className="text-xs">
-                          <div className="font-medium">{payment.paymentMethod}</div>
-                          {payment.receiptNumber && <div className="text-gray-500">OR# {payment.receiptNumber}</div>}
-                          <div className="text-gray-400">{new Date(payment.paidAt).toLocaleDateString()}</div>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">-</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        {payment.paid ? (
-                          <button
-                            onClick={() => handleMarkAsUnpaid(payment)}
-                            className="text-red-600 hover:text-red-800 text-sm font-medium"
-                          >
-                            Mark Unpaid
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleMarkAsPaid(payment)}
-                            className="text-green-600 hover:text-green-800 text-sm font-medium"
-                          >
-                            Mark Paid
-                          </button>
-                        )}
-                        <button
-                          onClick={() => handleDeletePayment(payment)}
-                          className="p-1 text-red-600 hover:bg-red-50 rounded"
-                          title="Delete payment record"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      <DataTable
+        columns={membershipColumns}
+        data={filteredPayments}
+        rowKey={(row) => row.id}
+        initialSortKey="studentId"
+        initialSortDirection="asc"
+        pageSize={25}
+        loading={loading}
+        loadingMessage="Loading membership records..."
+        emptyMessage={payments.length === 0
+          ? 'No payment records. Click "Initialize Payments" to create records for all students.'
+          : 'No members found matching your search'}
+        tableClassName="w-full"
+      />
 
       {/* Payment Modal (Renewal) */}
       {showPaymentModal && selectedPayment && (

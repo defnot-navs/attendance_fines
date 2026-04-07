@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Trash2, ArrowUp } from 'lucide-react';
 import { getAllAttendance, getAllStudents, getAllEvents, deleteAttendance, clearAllAttendance } from '../db/hybridDatabase';
+import DataTable from './common/DataTable';
 
 export default function AttendanceLogs() {
   const [logs, setLogs] = useState([]);
@@ -150,6 +151,99 @@ export default function AttendanceLogs() {
     }
   };
 
+  const attendanceColumns = [
+    {
+      key: 'date',
+      header: 'Date',
+      sortable: true,
+      accessor: (row) => row.date,
+      cellClassName: 'whitespace-nowrap',
+    },
+    {
+      key: 'event',
+      header: 'Event',
+      sortable: true,
+      accessor: (row) => events[row.eventId]?.name || 'No event',
+      render: (row) => {
+        const event = events[row.eventId];
+        return event ? event.name : <span className="text-gray-400 italic">No event</span>;
+      },
+    },
+    {
+      key: 'student',
+      header: 'Student',
+      sortable: true,
+      accessor: (row) => {
+        const student = students[row.studentId];
+        return student ? `${student.lastName}, ${student.firstName} ${student.middleInitial}` : 'Unknown';
+      },
+      render: (row) => {
+        const student = students[row.studentId];
+        return student
+          ? `${student.lastName}, ${student.firstName} ${student.middleInitial}`
+          : 'Unknown';
+      },
+      cellClassName: 'whitespace-nowrap',
+    },
+    {
+      key: 'studentId',
+      header: 'Student ID',
+      sortable: true,
+      accessor: (row) => row.studentId,
+      cellClassName: 'text-gray-600 whitespace-nowrap',
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      sortable: true,
+      accessor: (row) => row.type,
+      render: (row) => (
+        <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${getTypeBadge(row.type)}`}>
+          {String(row.type || '').toUpperCase()}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      accessor: (row) => row.status,
+      render: (row) => (
+        <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${getStatusBadge(row.status)}`}>
+          {String(row.status || '').toUpperCase()}
+        </span>
+      ),
+    },
+    {
+      key: 'time',
+      header: 'Time',
+      sortable: true,
+      accessor: (row) => row.timestamp,
+      render: (row) => (
+        <div className="flex items-center gap-1 whitespace-nowrap text-gray-600">
+          <Clock className="w-3 h-3" />
+          {new Date(row.timestamp).toLocaleTimeString()}
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      sortable: false,
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+      render: (row) => (
+        <button
+          onClick={() => handleDeleteAttendance(row)}
+          className="text-red-600 hover:text-red-800 p-1"
+          title="Delete attendance record"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      ),
+    },
+  ];
+
   return (
     <div className="bg-white rounded-lg shadow p-4 sm:p-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
@@ -247,77 +341,18 @@ export default function AttendanceLogs() {
       </div>
 
       {/* Logs Table */}
-      {loading ? (
-        <p className="text-gray-500 text-sm">Loading...</p>
-      ) : filteredLogs.length === 0 ? (
-        <div className="text-center py-12 text-gray-500">
-          <Calendar className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 opacity-50" />
-          <p className="text-sm sm:text-base">No attendance records found</p>
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full w-full">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">Date</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Event</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Student</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 whitespace-nowrap">Student ID</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Type</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Status</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-semibold text-gray-700">Time</th>
-                <th className="px-2 sm:px-4 py-2 sm:py-3 text-right text-xs sm:text-sm font-semibold text-gray-700">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {filteredLogs.map((log, idx) => {
-                const student = students[log.studentId];
-                const event = events[log.eventId];
-                return (
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 whitespace-nowrap">{log.date}</td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-700">
-                      {event ? event.name : <span className="text-gray-400 italic">No event</span>}
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 whitespace-nowrap">
-                      {student 
-                        ? `${student.lastName}, ${student.firstName} ${student.middleInitial}`
-                        : 'Unknown'
-                      }
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-600 whitespace-nowrap">{log.studentId}</td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3">
-                      <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${getTypeBadge(log.type)}`}>
-                        {log.type.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3">
-                      <span className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap ${getStatusBadge(log.status)}`}>
-                        {log.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-600">
-                      <div className="flex items-center gap-1 whitespace-nowrap">
-                        <Clock className="w-3 h-3" />
-                        {new Date(log.timestamp).toLocaleTimeString()}
-                      </div>
-                    </td>
-                    <td className="px-2 sm:px-4 py-2 sm:py-3 text-right">
-                      <button
-                        onClick={() => handleDeleteAttendance(log)}
-                        className="text-red-600 hover:text-red-800 p-1"
-                        title="Delete attendance record"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={attendanceColumns}
+        data={filteredLogs}
+        rowKey={(row) => row.id}
+        initialSortKey="time"
+        initialSortDirection="desc"
+        pageSize={25}
+        loading={loading}
+        loadingMessage="Loading attendance records..."
+        emptyMessage="No attendance records found"
+        tableClassName="min-w-full w-full"
+      />
 
       {/* Back to Top Button */}
       {showBackToTop && (
