@@ -411,6 +411,22 @@ export async function updateAttendance(attendanceId, updates) {
   return updateLocal(attendanceId, updates);
 }
 
+export async function deleteAttendance(attendanceId) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.deleteAttendance(attendanceId);
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { deleteAttendance: deleteLocal } = await import('./database');
+  return deleteLocal(attendanceId);
+}
+
 // ===== FINES =====
 
 export async function recordFine(studentId, amount, reason, date = null, eventId = null) {

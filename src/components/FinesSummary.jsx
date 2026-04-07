@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, deleteAttendance, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 import DataTable from './common/DataTable';
@@ -23,7 +23,8 @@ export default function FinesSummary() {
     open: false,
     student: null,
     records: [],
-    originalStatusById: {}
+    originalStatusById: {},
+    deletedRows: []
   });
   const [savingAttendanceEdits, setSavingAttendanceEdits] = useState(false);
 
@@ -120,10 +121,12 @@ export default function FinesSummary() {
         };
       }
 
+      const noEventAttendance = allAttendance.filter((a) => normalizeEventId(a.eventId) === null);
+
       // Keep uncategorized fines accessible in admin breakdown so they can be managed/deleted.
       const noEventFines = allFines.filter((f) => normalizeEventId(f.eventId) === null);
       eventData[NO_EVENT_KEY] = {
-        attendance: [],
+        attendance: noEventAttendance,
         fines: noEventFines,
         totalFines: noEventFines.reduce((sum, f) => sum + Number(f.amount || 0), 0),
         presentCount: 0,
@@ -359,12 +362,13 @@ export default function FinesSummary() {
       student,
       records: rows,
       originalStatusById,
+      deletedRows: [],
     });
   };
 
   const closeAttendanceModal = (force = false) => {
     if (savingAttendanceEdits && !force) return;
-    setAttendanceModal({ open: false, student: null, records: [], originalStatusById: {} });
+    setAttendanceModal({ open: false, student: null, records: [], originalStatusById: {}, deletedRows: [] });
   };
 
   const handleModalAttendanceStatusChange = (rowKey, nextStatus) => {
@@ -378,6 +382,22 @@ export default function FinesSummary() {
     }));
   };
 
+  const handleModalDeleteAttendance = (row) => {
+    const isExisting = Boolean(row?.id);
+    const confirmed = confirm(
+      isExisting
+        ? `Delete this attendance record?\n\nEvent: ${row.eventName || 'General / No Event'}\nDate: ${row.date || '-'}\nSession: ${String(row.session || '').replace('_', ' ')}\n\nThis cannot be undone.`
+        : `Remove this unsaved row from the edit list?\n\nEvent: ${row.eventName || 'General / No Event'}\nSession: ${String(row.session || '').replace('_', ' ')}`
+    );
+    if (!confirmed) return;
+
+    setAttendanceModal((prev) => ({
+      ...prev,
+      records: prev.records.filter((r) => r.key !== row.key),
+      deletedRows: isExisting ? [...prev.deletedRows, row] : prev.deletedRows,
+    }));
+  };
+
   const handleSaveAttendanceEdits = async () => {
     try {
       setSavingAttendanceEdits(true);
@@ -387,8 +407,9 @@ export default function FinesSummary() {
       const changedRows = attendanceModal.records.filter((row) => (
         attendanceModal.originalStatusById[row.key] !== row.status
       ));
+      const deletedRows = attendanceModal.deletedRows || [];
 
-      if (changedRows.length === 0) {
+      if (changedRows.length === 0 && deletedRows.length === 0) {
         setResult({ success: false, message: 'No attendance changes to save.' });
         setTimeout(() => setResult(null), 2000);
         closeAttendanceModal(true);
@@ -426,6 +447,18 @@ export default function FinesSummary() {
 
         return null;
       };
+
+      for (const row of deletedRows) {
+        if (row.id) {
+          await deleteAttendance(row.id);
+        }
+
+        if (!studentId) continue;
+        const existingFine = findMatchingFine(row);
+        if (existingFine) {
+          await deleteFine(existingFine.id);
+        }
+      }
 
       for (const row of changedRows) {
         if (row.id) {
@@ -501,7 +534,10 @@ export default function FinesSummary() {
         }
       }
 
-      setResult({ success: true, message: `Updated ${changedRows.length} attendance record(s) and synced fines.` });
+      setResult({
+        success: true,
+        message: `Updated ${changedRows.length} attendance record(s), deleted ${deletedRows.length} record(s), and synced fines.`,
+      });
       closeAttendanceModal(true);
       await loadData();
       setTimeout(() => setResult(null), 2500);
@@ -525,7 +561,18 @@ export default function FinesSummary() {
     return (eventAttendance[eventId]?.attendance || [])
       .filter((a) => a.studentId === student.studentId)
       .map((attendance) => ({ event, attendance }));
-  });
+  }).concat(
+    (eventAttendance[NO_EVENT_KEY]?.attendance || [])
+      .filter((a) => a.studentId === student.studentId)
+      .map((attendance) => ({
+        event: {
+          id: null,
+          name: 'General / No Event',
+          date: attendance.date || '',
+        },
+        attendance,
+      }))
+  );
 
   const getStudentFineDetails = (student) => events.flatMap((event) => {
     const eventId = String(event.id);
@@ -863,6 +910,22 @@ export default function FinesSummary() {
           <option value="excused">Excused</option>
           <option value="absent">Absent</option>
         </select>
+      ),
+    },
+    {
+      key: 'rowActions',
+      header: 'Action',
+      sortable: false,
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
+      render: (row) => (
+        <button
+          onClick={() => handleModalDeleteAttendance(row)}
+          className="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
+          disabled={savingAttendanceEdits}
+        >
+          Delete
+        </button>
       ),
     },
   ];
