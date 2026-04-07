@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, getFineRules, recordFine } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 
@@ -287,11 +287,13 @@ export default function FinesSummary() {
     const rows = [...studentAttendance]
       .map(({ event, attendance }) => ({
         id: attendance.id,
+        eventId: event.id,
         eventName: event.name,
         date: attendance.date || event.date,
         session: attendance.session || 'AM_IN',
         status: attendance.status || 'absent',
         type: attendance.type || 'manual',
+        eventFineAmount: event.fineAmount,
         timestamp: attendance.timestamp || null,
       }))
       .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
@@ -343,11 +345,95 @@ export default function FinesSummary() {
         return;
       }
 
+      const fineRules = await getFineRules();
+      const ruleMap = {};
+      fineRules.forEach((rule) => {
+        ruleMap[rule.type] = Number(rule.amount || 0);
+      });
+
+      const studentId = attendanceModal.student?.studentId;
+      const studentFines = studentId ? await getStudentFines(studentId) : [];
+      const normalizeDate = (value) => String(value || '').slice(0, 10);
+      const normalizeId = (value) => (value === null || value === undefined || value === '' ? null : String(value));
+      const toSessionLabel = (session) => String(session || 'AM_IN').replace('_', ' ');
+
+      const findMatchingFine = (row) => {
+        const rowEventId = normalizeId(row.eventId);
+        const rowDate = normalizeDate(row.date);
+        const label = toSessionLabel(row.session);
+
+        const eventDateFines = studentFines.filter((fine) => {
+          const fineEventId = normalizeId(fine.eventId);
+          return fineEventId === rowEventId && normalizeDate(fine.date) === rowDate;
+        });
+
+        const exactSessionFine = eventDateFines.find((fine) =>
+          String(fine.reason || '').toUpperCase().includes(label.toUpperCase())
+        );
+        if (exactSessionFine) return exactSessionFine;
+
+        if (eventDateFines.length === 1) return eventDateFines[0];
+
+        return null;
+      };
+
       for (const row of changedRows) {
         await updateAttendance(row.id, { status: row.status });
+
+        if (!studentId) continue;
+
+        const existingFine = findMatchingFine(row);
+        const eventFineAmount = Number(row.eventFineAmount || 0);
+        const absentFineAmount = eventFineAmount > 0 ? eventFineAmount : Number(ruleMap.absent || 0);
+        const lateFineAmount = eventFineAmount > 0 ? eventFineAmount * 0.75 : Number(ruleMap.late || 0);
+        const absentReason = `Absent - ${toSessionLabel(row.session)}`;
+        const lateReason = `Late Arrival - ${toSessionLabel(row.session)}`;
+
+        // Present and excused should not have attendance fines.
+        if (row.status === 'present' || row.status === 'excused') {
+          if (existingFine) {
+            await deleteFine(existingFine.id);
+          }
+          continue;
+        }
+
+        if (row.status === 'absent') {
+          if (absentFineAmount <= 0) {
+            if (existingFine) await deleteFine(existingFine.id);
+            continue;
+          }
+
+          if (existingFine) {
+            await updateFine(existingFine.id, {
+              amount: absentFineAmount,
+              reason: absentReason,
+              date: row.date,
+            });
+          } else {
+            await recordFine(studentId, absentFineAmount, absentReason, row.date, row.eventId);
+          }
+          continue;
+        }
+
+        if (row.status === 'late') {
+          if (lateFineAmount <= 0) {
+            if (existingFine) await deleteFine(existingFine.id);
+            continue;
+          }
+
+          if (existingFine) {
+            await updateFine(existingFine.id, {
+              amount: lateFineAmount,
+              reason: lateReason,
+              date: row.date,
+            });
+          } else {
+            await recordFine(studentId, lateFineAmount, lateReason, row.date, row.eventId);
+          }
+        }
       }
 
-      setResult({ success: true, message: `Updated ${changedRows.length} attendance record(s).` });
+      setResult({ success: true, message: `Updated ${changedRows.length} attendance record(s) and synced fines.` });
       closeAttendanceModal(true);
       await loadData();
       setTimeout(() => setResult(null), 2500);
