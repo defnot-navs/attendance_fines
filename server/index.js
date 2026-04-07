@@ -7,6 +7,10 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const ATTENDANCE_LOG_LIMIT = Math.min(
+  50000,
+  Math.max(1, Number(process.env.ATTENDANCE_LOG_LIMIT || 5000) || 5000)
+);
 
 // Middleware
 app.use(cors());
@@ -474,7 +478,7 @@ app.get('/api/attendance', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not available' });
 
   try {
-    const [rows] = await pool.query('SELECT * FROM attendance ORDER BY timestamp DESC LIMIT 1000');
+    const [rows] = await pool.query(`SELECT * FROM attendance ORDER BY timestamp DESC LIMIT ${ATTENDANCE_LOG_LIMIT}`);
     res.json(rows);
   } catch (error) {
     res.status(500).json({ error: error.message });

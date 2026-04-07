@@ -7,6 +7,10 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const ATTENDANCE_LOG_LIMIT = Math.min(
+  50000,
+  Math.max(1, Number(process.env.ATTENDANCE_LOG_LIMIT || 5000) || 5000)
+);
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
@@ -506,7 +510,7 @@ app.post('/api/attendance', async (req, res) => {
 
 app.get('/api/attendance', async (req, res) => {
   try {
-    const rows = await Attendance.find().sort({ timestamp: -1 }).limit(1000).lean();
+    const rows = await Attendance.find().sort({ timestamp: -1 }).limit(ATTENDANCE_LOG_LIMIT).lean();
     res.json(rows.map(mapAttendance));
   } catch (error) {
     res.status(500).json({ error: error.message });
