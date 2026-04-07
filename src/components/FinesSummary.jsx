@@ -685,7 +685,7 @@ export default function FinesSummary() {
                               className="px-2 py-1 text-xs font-medium rounded bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
                               title="Edit attendance status for this student"
                             >
-                              Edit
+                              Edit Attendance
                             </button>
                           </div>
                         </td>
@@ -785,7 +785,7 @@ export default function FinesSummary() {
                                                 onClick={() => handleEditFine(fine)}
                                                 className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
                                               >
-                                                Edit
+                                                Edit Fine
                                               </button>
                                               <button
                                                 onClick={() => handleDeleteFine(fine)}
