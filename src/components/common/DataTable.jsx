@@ -19,6 +19,7 @@ export default function DataTable({
   loading = false,
   loadingMessage = 'Loading...',
   tableClassName = 'w-full',
+  showFooter = true,
   isRowExpanded,
   renderExpandedRow,
   expandedRowColSpan,
@@ -158,43 +159,45 @@ export default function DataTable({
         </table>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3 sm:px-4 py-2 border-t bg-gray-50 text-xs sm:text-sm">
-        <div className="text-gray-600">
-          Showing {sortedData.length === 0 ? 0 : start + 1}-{Math.min(start + currentPageSize, sortedData.length)} of {sortedData.length}
-        </div>
+      {showFooter && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3 sm:px-4 py-2 border-t bg-gray-50 text-xs sm:text-sm">
+          <div className="text-gray-600">
+            Showing {sortedData.length === 0 ? 0 : start + 1}-{Math.min(start + currentPageSize, sortedData.length)} of {sortedData.length}
+          </div>
 
-        <div className="flex items-center gap-2">
-          <label className="text-gray-600">Rows:</label>
-          <select
-            value={currentPageSize}
-            onChange={(e) => {
-              setCurrentPageSize(Number(e.target.value));
-              setCurrentPage(1);
-            }}
-            className="px-2 py-1 border border-gray-300 rounded"
-          >
-            {pageSizeOptions.map((opt) => (
-              <option key={opt} value={opt}>{opt}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <label className="text-gray-600">Rows:</label>
+            <select
+              value={currentPageSize}
+              onChange={(e) => {
+                setCurrentPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+              className="px-2 py-1 border border-gray-300 rounded"
+            >
+              {pageSizeOptions.map((opt) => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
 
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={safePage <= 1}
-            className="px-2 py-1 border rounded disabled:opacity-50"
-          >
-            Prev
-          </button>
-          <span className="text-gray-700">{safePage}/{totalPages}</span>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            disabled={safePage >= totalPages}
-            className="px-2 py-1 border rounded disabled:opacity-50"
-          >
-            Next
-          </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              className="px-2 py-1 border rounded disabled:opacity-50"
+            >
+              Prev
+            </button>
+            <span className="text-gray-700">{safePage}/{totalPages}</span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              className="px-2 py-1 border rounded disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

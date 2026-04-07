@@ -519,108 +519,149 @@ export default function FinesSummary() {
     const studentAttendance = getStudentAttendanceDetails(student);
     const studentFinesDetailed = getStudentFineDetails(student);
 
+    const expandedAttendanceColumns = [
+      { key: 'event', header: 'Event', sortable: true, accessor: (row) => row.event.name, render: (row) => row.event.name },
+      {
+        key: 'date',
+        header: 'Date',
+        sortable: true,
+        accessor: (row) => row.event.date,
+        render: (row) => new Date(row.event.date).toLocaleDateString(),
+        cellClassName: 'text-gray-600',
+      },
+      {
+        key: 'session',
+        header: 'Session',
+        sortable: true,
+        accessor: (row) => row.attendance?.session || '',
+        render: (row) => row.attendance?.session ? row.attendance.session.replace('_', ' ') : '-',
+        headerClassName: 'text-center',
+        cellClassName: 'text-center text-gray-700',
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        sortable: true,
+        accessor: (row) => row.attendance?.status || '',
+        headerClassName: 'text-center',
+        cellClassName: 'text-center',
+        render: (row) => (
+          <span className={`px-2 py-1 text-xs font-medium rounded ${
+            row.attendance.status === 'present' ? 'bg-green-100 text-green-800' :
+            row.attendance.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
+            row.attendance.status === 'excused' ? 'bg-blue-100 text-blue-800' :
+            'bg-red-100 text-red-800'
+          }`}>
+            {String(row.attendance.status || '').toUpperCase()}
+          </span>
+        ),
+      },
+      {
+        key: 'time',
+        header: 'Time',
+        sortable: true,
+        accessor: (row) => row.attendance?.timestamp || '',
+        render: (row) => row.attendance?.timestamp ? new Date(row.attendance.timestamp).toLocaleTimeString() : '-',
+        headerClassName: 'text-center',
+        cellClassName: 'text-center text-gray-600',
+      },
+    ];
+
+    const expandedFineColumns = [
+      { key: 'event', header: 'Event', sortable: true, accessor: (row) => row.event.name, render: (row) => row.event.name },
+      { key: 'date', header: 'Date', sortable: true, accessor: (row) => row.fine.date || '', render: (row) => row.fine.date || '-', cellClassName: 'text-gray-600' },
+      { key: 'reason', header: 'Reason', sortable: true, accessor: (row) => row.fine.reason || '', render: (row) => row.fine.reason, cellClassName: 'text-gray-700' },
+      {
+        key: 'amount',
+        header: 'Amount',
+        sortable: true,
+        accessor: (row) => Number(row.fine.amount || 0),
+        render: (row) => <span className="font-semibold text-red-600">{formatCurrency(row.fine.amount)}</span>,
+        headerClassName: 'text-right',
+        cellClassName: 'text-right',
+      },
+      {
+        key: 'status',
+        header: 'Status',
+        sortable: true,
+        accessor: (row) => row.fine.paid ? 'PAID' : 'UNPAID',
+        headerClassName: 'text-center',
+        cellClassName: 'text-center',
+        render: (row) => (
+          <span className={`px-2 py-1 text-xs font-medium rounded ${
+            row.fine.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+          }`}>
+            {row.fine.paid ? 'PAID' : 'UNPAID'}
+          </span>
+        ),
+      },
+      {
+        key: 'action',
+        header: 'Action',
+        sortable: false,
+        headerClassName: 'text-center',
+        cellClassName: 'text-center',
+        render: (row) => (
+          <div className="flex items-center justify-center gap-1">
+            <button
+              onClick={() => handleToggleFinePayment(row.fine)}
+              className={`px-2 py-1 text-xs font-medium rounded ${
+                row.fine.paid
+                  ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                  : 'bg-green-100 text-green-800 hover:bg-green-200'
+              }`}
+            >
+              {row.fine.paid ? 'Unpay' : 'Pay'}
+            </button>
+            <button
+              onClick={() => handleEditFine(row.fine)}
+              className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
+            >
+              Edit Fine
+            </button>
+            <button
+              onClick={() => handleDeleteFine(row.fine)}
+              className="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
+            >
+              Delete
+            </button>
+          </div>
+        ),
+      },
+    ];
+
     return (
       <div className="px-4 py-3 bg-gray-50 text-sm">
         <h4 className="font-semibold text-gray-900 mb-3">Attendance Records for {student.name}</h4>
         {studentAttendance.length > 0 ? (
-          <div className="bg-white rounded-lg border overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-100 border-b">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
-                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Session</th>
-                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
-                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {studentAttendance.map(({ event, attendance }, detailIdx) => (
-                  <tr key={detailIdx} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-xs text-gray-900">{event.name}</td>
-                    <td className="px-3 py-2 text-xs text-gray-600">{new Date(event.date).toLocaleDateString()}</td>
-                    <td className="px-3 py-2 text-center text-xs text-gray-700">{attendance?.session ? attendance.session.replace('_', ' ') : '-'}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className={`px-2 py-1 text-xs font-medium rounded ${
-                        attendance.status === 'present' ? 'bg-green-100 text-green-800' :
-                        attendance.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
-                        attendance.status === 'excused' ? 'bg-blue-100 text-blue-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {attendance.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-600 text-center">
-                      {attendance?.timestamp ? new Date(attendance.timestamp).toLocaleTimeString() : '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={expandedAttendanceColumns}
+            data={studentAttendance}
+            rowKey={(row) => `${row.attendance.id || `${row.event.id}-${row.attendance.session}-${row.attendance.timestamp || ''}`}`}
+            initialSortKey="date"
+            initialSortDirection="desc"
+            pageSize={8}
+            pageSizeOptions={[5, 8, 12]}
+            showFooter={false}
+            tableClassName="w-full"
+          />
         ) : (
           <p className="text-xs text-gray-500">No attendance records for this student.</p>
         )}
 
         <h4 className="font-semibold text-gray-900 mt-4 mb-3">Fines Breakdown for {student.name}</h4>
         {studentFinesDetailed.length > 0 ? (
-          <div className="bg-white rounded-lg border overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-gray-100 border-b">
-                <tr>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Reason</th>
-                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Amount</th>
-                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
-                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {studentFinesDetailed.map(({ event, fine }, fineIdx) => (
-                  <tr key={fineIdx} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-xs text-gray-900">{event.name}</td>
-                    <td className="px-3 py-2 text-xs text-gray-600">{fine.date || '-'}</td>
-                    <td className="px-3 py-2 text-xs text-gray-700">{fine.reason}</td>
-                    <td className="px-3 py-2 text-xs text-right font-semibold text-red-600">{formatCurrency(fine.amount)}</td>
-                    <td className="px-3 py-2 text-center">
-                      <span className={`px-2 py-1 text-xs font-medium rounded ${
-                        fine.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                      }`}>
-                        {fine.paid ? 'PAID' : 'UNPAID'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <div className="flex items-center justify-center gap-1">
-                        <button
-                          onClick={() => handleToggleFinePayment(fine)}
-                          className={`px-2 py-1 text-xs font-medium rounded ${
-                            fine.paid
-                              ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                              : 'bg-green-100 text-green-800 hover:bg-green-200'
-                          }`}
-                        >
-                          {fine.paid ? 'Unpay' : 'Pay'}
-                        </button>
-                        <button
-                          onClick={() => handleEditFine(fine)}
-                          className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
-                        >
-                          Edit Fine
-                        </button>
-                        <button
-                          onClick={() => handleDeleteFine(fine)}
-                          className="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            columns={expandedFineColumns}
+            data={studentFinesDetailed}
+            rowKey={(row) => `${row.fine.id || `${row.event.id}-${row.fine.reason}-${row.fine.date || ''}`}`}
+            initialSortKey="date"
+            initialSortDirection="desc"
+            pageSize={8}
+            pageSizeOptions={[5, 8, 12]}
+            showFooter={false}
+            tableClassName="w-full"
+          />
         ) : (
           <p className="text-xs text-gray-500">No fine records for this student.</p>
         )}
@@ -752,6 +793,41 @@ export default function FinesSummary() {
           </div>
         );
       },
+    },
+  ];
+
+  const attendanceModalColumns = [
+    { key: 'eventName', header: 'Event', sortable: true, accessor: (row) => row.eventName || '-', render: (row) => row.eventName || '-' },
+    { key: 'date', header: 'Date', sortable: true, accessor: (row) => row.date || '-', render: (row) => row.date || '-', cellClassName: 'text-gray-600' },
+    {
+      key: 'session',
+      header: 'Session',
+      sortable: true,
+      accessor: (row) => row.session || '',
+      render: (row) => String(row.session || '').replace('_', ' '),
+      headerClassName: 'text-center',
+      cellClassName: 'text-center text-gray-700',
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: false,
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
+      render: (row) => (
+        <select
+          value={row.status}
+          onChange={(e) => handleModalAttendanceStatusChange(row.key, e.target.value)}
+          className="px-2 py-1 border border-gray-300 rounded text-xs"
+          disabled={savingAttendanceEdits}
+        >
+          {!row.id && <option value="__not_included__">Not Included</option>}
+          <option value="present">Present</option>
+          <option value="late">Late</option>
+          <option value="excused">Excused</option>
+          <option value="absent">Absent</option>
+        </select>
+      ),
     },
   ];
 
@@ -1137,39 +1213,17 @@ export default function FinesSummary() {
               {attendanceModal.records.length === 0 ? (
                 <p className="text-sm text-gray-500">No attendance records found for this student.</p>
               ) : (
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 border-b sticky top-0">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
-                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
-                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Session</th>
-                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {attendanceModal.records.map((row, idx) => (
-                      <tr key={row.key || `${row.id || 'tmp'}-${idx}`} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 text-gray-900">{row.eventName || '-'}</td>
-                        <td className="px-3 py-2 text-gray-600">{row.date || '-'}</td>
-                        <td className="px-3 py-2 text-center text-gray-700">{row.session.replace('_', ' ')}</td>
-                        <td className="px-3 py-2 text-center">
-                          <select
-                            value={row.status}
-                            onChange={(e) => handleModalAttendanceStatusChange(row.key, e.target.value)}
-                            className="px-2 py-1 border border-gray-300 rounded text-xs"
-                            disabled={savingAttendanceEdits}
-                          >
-                            {!row.id && <option value="__not_included__">Not Included</option>}
-                            <option value="present">Present</option>
-                            <option value="late">Late</option>
-                            <option value="excused">Excused</option>
-                            <option value="absent">Absent</option>
-                          </select>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <DataTable
+                  columns={attendanceModalColumns}
+                  data={attendanceModal.records}
+                  rowKey={(row) => row.key}
+                  initialSortKey="date"
+                  initialSortDirection="desc"
+                  pageSize={12}
+                  pageSizeOptions={[8, 12, 20]}
+                  showFooter={false}
+                  tableClassName="w-full text-sm"
+                />
               )}
             </div>
 
