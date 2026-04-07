@@ -27,6 +27,7 @@ export default function FinesSummary() {
     deletedRows: []
   });
   const [savingAttendanceEdits, setSavingAttendanceEdits] = useState(false);
+  const [statsDetails, setStatsDetails] = useState({ open: false, type: 'total' });
 
   useEffect(() => {
     loadData();
@@ -182,6 +183,89 @@ export default function FinesSummary() {
     }));
 
     exportToCSV(exportData, `fines-summary-${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  const getStatsDetailRows = (type) => {
+    if (type === 'unpaid') return summary.filter((s) => Number(s.unpaidFines || 0) > 0);
+    if (type === 'paid') return summary.filter((s) => Number(s.paidFines || 0) > 0);
+    if (type === 'students') return summary.filter((s) => Number(s.totalFines || 0) > 0);
+    return summary.filter((s) => Number(s.totalFines || 0) > 0);
+  };
+
+  const statsDetailMeta = {
+    total: { title: 'Students With Total Fines', exportPrefix: 'total-fines' },
+    unpaid: { title: 'Students With Unpaid Fines', exportPrefix: 'unpaid-fines' },
+    paid: { title: 'Students With Paid Fines', exportPrefix: 'paid-fines' },
+    students: { title: 'Students With Fines', exportPrefix: 'students-with-fines' },
+  };
+
+  const openStatsDetails = (type) => {
+    setStatsDetails({ open: true, type });
+  };
+
+  const closeStatsDetails = () => {
+    setStatsDetails({ open: false, type: 'total' });
+  };
+
+  const handleExportStatsDetails = () => {
+    const rows = getStatsDetailRows(statsDetails.type);
+    if (rows.length === 0) {
+      alert('No student records to export for this category.');
+      return;
+    }
+
+    const exportRows = rows.map((s) => ({
+      'Student ID': s.studentId,
+      Name: s.name,
+      Program: s.program || '-',
+      Year: s.yearLevel || '-',
+      'Total Fines': Number(s.totalFines || 0),
+      'Unpaid Fines': Number(s.unpaidFines || 0),
+      'Paid Fines': Number(s.paidFines || 0),
+      'Fine Count': Number(s.fineCount || 0),
+      'Paid Count': Number(s.paidCount || 0),
+      'Unpaid Count': Number(s.unpaidCount || 0),
+    }));
+
+    const filePrefix = statsDetailMeta[statsDetails.type]?.exportPrefix || 'fines-drilldown';
+    exportToCSV(exportRows, `${filePrefix}-${new Date().toISOString().split('T')[0]}.csv`);
+  };
+
+  const handleCleanupNoEventRecords = async () => {
+    const noEventAttendance = eventAttendance[NO_EVENT_KEY]?.attendance || [];
+    const noEventFines = eventAttendance[NO_EVENT_KEY]?.fines || [];
+
+    if (noEventAttendance.length === 0 && noEventFines.length === 0) {
+      setResult({ success: false, message: 'No General / No Event records found to clean.' });
+      setTimeout(() => setResult(null), 2500);
+      return;
+    }
+
+    const confirmed = confirm(
+      `Delete ALL General / No Event records for all students?\n\nAttendance: ${noEventAttendance.length}\nFines: ${noEventFines.length}\n\nThis cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      for (const attendance of noEventAttendance) {
+        await deleteAttendance(attendance.id);
+      }
+
+      for (const fine of noEventFines) {
+        await deleteFine(fine.id);
+      }
+
+      setResult({
+        success: true,
+        message: `Deleted ${noEventAttendance.length} attendance and ${noEventFines.length} fine General / No Event record(s).`,
+      });
+      await loadData();
+      setTimeout(() => setResult(null), 3000);
+    } catch (error) {
+      setResult({ success: false, message: `Error cleaning General / No Event records: ${error.message}` });
+      setTimeout(() => setResult(null), 3500);
+    }
   };
 
   const handleMarkAllAsPaid = async () => {
@@ -937,6 +1021,55 @@ export default function FinesSummary() {
     },
   ];
 
+  const statsDetailColumns = [
+    { key: 'studentId', header: 'Student ID', sortable: true, accessor: (row) => row.studentId },
+    { key: 'name', header: 'Name', sortable: true, accessor: (row) => row.name },
+    { key: 'program', header: 'Program', sortable: true, accessor: (row) => row.program || '-', cellClassName: 'text-gray-600' },
+    {
+      key: 'yearLevel',
+      header: 'Year',
+      sortable: true,
+      accessor: (row) => Number(row.yearLevel || 0),
+      render: (row) => row.yearLevel ? `${row.yearLevel}${['st', 'nd', 'rd', 'th'][row.yearLevel > 3 ? 3 : row.yearLevel - 1]} Year` : '-',
+      cellClassName: 'text-gray-600',
+    },
+    {
+      key: 'totalFines',
+      header: 'Total Fines',
+      sortable: true,
+      accessor: (row) => Number(row.totalFines || 0),
+      render: (row) => <span className="font-semibold text-blue-700">{formatCurrency(row.totalFines || 0)}</span>,
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'unpaidFines',
+      header: 'Unpaid',
+      sortable: true,
+      accessor: (row) => Number(row.unpaidFines || 0),
+      render: (row) => <span className="font-semibold text-red-700">{formatCurrency(row.unpaidFines || 0)}</span>,
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'paidFines',
+      header: 'Paid',
+      sortable: true,
+      accessor: (row) => Number(row.paidFines || 0),
+      render: (row) => <span className="font-semibold text-green-700">{formatCurrency(row.paidFines || 0)}</span>,
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'fineCount',
+      header: 'Count',
+      sortable: true,
+      accessor: (row) => Number(row.fineCount || 0),
+      cellClassName: 'text-right text-gray-700',
+      headerClassName: 'text-right',
+    },
+  ];
+
   return (
     <div className="bg-white rounded-lg shadow p-3 sm:p-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-3">
@@ -970,6 +1103,15 @@ export default function FinesSummary() {
             <span className="sm:hidden">Clear</span>
           </button>
           <button
+            onClick={handleCleanupNoEventRecords}
+            className="flex items-center justify-center gap-1 sm:gap-2 bg-amber-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-amber-700 active:bg-amber-800 text-xs sm:text-sm font-medium flex-1 sm:flex-initial touch-manipulation"
+            title="Delete all General / No Event records for all students"
+          >
+            <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">Clean No Event</span>
+            <span className="sm:hidden">No Event</span>
+          </button>
+          <button
             onClick={handleExport}
             className="bg-gray-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-gray-700 active:bg-gray-800 text-xs sm:text-sm font-medium w-full sm:w-auto touch-manipulation"
           >
@@ -998,8 +1140,12 @@ export default function FinesSummary() {
               <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
               Attendance Fines
             </h3>
+            <p className="text-xs text-gray-500 mb-2">Click a card to view the matching students and export CSV.</p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
+              <button
+                onClick={() => openStatsDetails('total')}
+                className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 text-left hover:shadow-sm hover:border-blue-300 transition"
+              >
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between">
                   <div>
                     <p className="text-xs sm:text-sm text-blue-600 font-medium">Total Fines</p>
@@ -1009,9 +1155,12 @@ export default function FinesSummary() {
                   </div>
                   <DollarSign className="w-6 h-6 sm:w-8 sm:h-8 text-blue-600 opacity-50 hidden sm:block" />
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+              <button
+                onClick={() => openStatsDetails('unpaid')}
+                className="bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4 text-left hover:shadow-sm hover:border-red-300 transition"
+              >
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between">
                   <div>
                     <p className="text-xs sm:text-sm text-red-600 font-medium">Unpaid Fines</p>
@@ -1021,9 +1170,12 @@ export default function FinesSummary() {
                   </div>
                   <XCircle className="w-6 h-6 sm:w-8 sm:h-8 text-red-600 opacity-50 hidden sm:block" />
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-green-50 border border-green-200 rounded-lg p-3 sm:p-4">
+              <button
+                onClick={() => openStatsDetails('paid')}
+                className="bg-green-50 border border-green-200 rounded-lg p-3 sm:p-4 text-left hover:shadow-sm hover:border-green-300 transition"
+              >
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between">
                   <div>
                     <p className="text-xs sm:text-sm text-green-600 font-medium">Paid Fines</p>
@@ -1033,9 +1185,12 @@ export default function FinesSummary() {
                   </div>
                   <CheckCircle className="w-6 h-6 sm:w-8 sm:h-8 text-green-600 opacity-50 hidden sm:block" />
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 sm:p-4">
+              <button
+                onClick={() => openStatsDetails('students')}
+                className="bg-purple-50 border border-purple-200 rounded-lg p-3 sm:p-4 text-left hover:shadow-sm hover:border-purple-300 transition"
+              >
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-purple-600 font-medium">Students with Fines</p>
@@ -1045,7 +1200,7 @@ export default function FinesSummary() {
                   </div>
                   <Users className="w-8 h-8 text-purple-600 opacity-50" />
                 </div>
-              </div>
+              </button>
             </div>
           </div>
 
@@ -1352,6 +1507,59 @@ export default function FinesSummary() {
                 className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 {savingAttendanceEdits ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {statsDetails.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={closeStatsDetails} />
+          <div className="relative z-10 w-full max-w-6xl bg-white rounded-xl shadow-xl border">
+            <div className="px-4 py-3 border-b flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {statsDetailMeta[statsDetails.type]?.title || 'Fines Details'}
+                </h3>
+                <p className="text-sm text-gray-600">
+                  {getStatsDetailRows(statsDetails.type).length} student(s)
+                </p>
+              </div>
+              <button
+                onClick={closeStatsDetails}
+                className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-4 max-h-[70vh] overflow-auto">
+              {getStatsDetailRows(statsDetails.type).length === 0 ? (
+                <p className="text-sm text-gray-500">No students found for this category.</p>
+              ) : (
+                <DataTable
+                  columns={statsDetailColumns}
+                  data={getStatsDetailRows(statsDetails.type)}
+                  rowKey={(row) => row.studentId}
+                  initialSortKey="totalFines"
+                  initialSortDirection="desc"
+                  pageSize={15}
+                  pageSizeOptions={[10, 15, 25, 50]}
+                  tableClassName="w-full"
+                  stickyHeader={true}
+                  maxBodyHeight="58vh"
+                  compact={true}
+                />
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t flex items-center justify-end gap-2">
+              <button
+                onClick={handleExportStatsDetails}
+                className="px-3 py-2 text-sm rounded bg-gray-700 text-white hover:bg-gray-800"
+              >
+                Export CSV
               </button>
             </div>
           </div>
