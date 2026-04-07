@@ -34,6 +34,17 @@ export class AttendanceDatabase extends Dexie {
       syncQueue: '++id, table, action, data, timestamp, synced'
     });
 
+    this.version(16).stores({
+      students: '++id, &studentId, lastName, firstName, middleInitial, yearLevel, program, email',
+      events: '++id, name, date, startTime, lateThreshold, endTime, fineAmount, description, createdAt',
+      attendance: '++id, studentId, eventId, date, session, [studentId+date], [studentId+date+session], [studentId+eventId+session], [studentId+eventId+date+session], type, timestamp, status, synced',
+      fines: '++id, studentId, eventId, amount, reason, date, timestamp, paid, paidAt, synced',
+      fineRules: '++id, type, amount',
+      excuses: '++id, studentId, type, startDate, endDate, startTime, endTime, description, fileName, fileData, uploadedAt, approved',
+      membershipPayments: '++id, &studentId, amount, paid, paidAt, paymentMethod, receiptNumber, nationalMembership, nationalReceiptNumber, academicYear, semester, createdAt, synced',
+      syncQueue: '++id, table, action, data, timestamp, synced'
+    });
+
     this.students = this.table('students');
     this.events = this.table('events');
     this.attendance = this.table('attendance');
@@ -283,20 +294,20 @@ export async function deleteAllStudents() {
 /**
  * Record attendance
  */
-export async function recordAttendance(studentId, type = 'qr', status = 'present', eventId = null, session = 'AM_IN') {
-  const today = new Date().toISOString().split('T')[0];
+export async function recordAttendance(studentId, type = 'qr', status = 'present', eventId = null, session = 'AM_IN', dateOverride = null) {
+  const attendanceDate = dateOverride || new Date().toISOString().split('T')[0];
   
   // Check if already recorded for this event (or today if no event)
   let existing;
   if (eventId) {
     existing = await db.attendance
-      .where('[studentId+eventId+session]')
-      .equals([studentId, eventId, session])
+      .where('[studentId+eventId+date+session]')
+      .equals([studentId, eventId, attendanceDate, session])
       .first();
   } else {
     existing = await db.attendance
       .where('[studentId+date+session]')
-      .equals([studentId, today, session])
+      .equals([studentId, attendanceDate, session])
       .first();
   }
   
@@ -307,7 +318,7 @@ export async function recordAttendance(studentId, type = 'qr', status = 'present
   const record = {
     studentId,
     eventId,
-    date: today,
+    date: attendanceDate,
     session,
     type, // 'qr' or 'online' or 'manual'
     timestamp: new Date().toISOString(),

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, getFineRules, recordFine } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 
@@ -284,8 +284,11 @@ export default function FinesSummary() {
   };
 
   const openAttendanceModal = (student, studentAttendance) => {
+    const NOT_INCLUDED_STATUS = '__not_included__';
+
     const rows = [...studentAttendance]
       .map(({ event, attendance }) => ({
+        key: `id:${attendance.id}`,
         id: attendance.id,
         eventId: event.id,
         eventName: event.name,
@@ -295,14 +298,40 @@ export default function FinesSummary() {
         type: attendance.type || 'manual',
         eventFineAmount: event.fineAmount,
         timestamp: attendance.timestamp || null,
-      }))
-      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+      }));
+
+    // Include rows for events/sessions where the student has no attendance yet.
+    const existingKeys = new Set(rows.map((r) => `${String(r.eventId)}::${r.session}`));
+    for (const event of events) {
+      const eventId = String(event.id);
+      const eventRows = (eventAttendance[eventId]?.attendance || []);
+      const sessionCandidates = [...new Set(eventRows.map((a) => a.session).filter(Boolean))];
+      const sessions = sessionCandidates.length > 0 ? sessionCandidates : ['AM_IN'];
+
+      for (const session of sessions) {
+        const composite = `${eventId}::${session}`;
+        if (existingKeys.has(composite)) continue;
+
+        rows.push({
+          key: `new:${eventId}:${session}`,
+          id: null,
+          eventId: event.id,
+          eventName: event.name,
+          date: event.date,
+          session,
+          status: NOT_INCLUDED_STATUS,
+          type: 'manual',
+          eventFineAmount: event.fineAmount,
+          timestamp: null,
+        });
+      }
+    }
+
+    rows.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
     const originalStatusById = {};
     rows.forEach((row) => {
-      if (row.id !== undefined && row.id !== null) {
-        originalStatusById[String(row.id)] = row.status;
-      }
+      originalStatusById[row.key] = row.status;
     });
 
     setAttendanceModal({
@@ -318,11 +347,11 @@ export default function FinesSummary() {
     setAttendanceModal({ open: false, student: null, records: [], originalStatusById: {} });
   };
 
-  const handleModalAttendanceStatusChange = (attendanceId, nextStatus) => {
+  const handleModalAttendanceStatusChange = (rowKey, nextStatus) => {
     setAttendanceModal((prev) => ({
       ...prev,
       records: prev.records.map((row) =>
-        String(row.id) === String(attendanceId)
+        row.key === rowKey
           ? { ...row, status: nextStatus }
           : row
       ),
@@ -333,10 +362,11 @@ export default function FinesSummary() {
     try {
       setSavingAttendanceEdits(true);
 
-      const changedRows = attendanceModal.records.filter((row) => {
-        if (row.id === undefined || row.id === null) return false;
-        return attendanceModal.originalStatusById[String(row.id)] !== row.status;
-      });
+      const NOT_INCLUDED_STATUS = '__not_included__';
+
+      const changedRows = attendanceModal.records.filter((row) => (
+        attendanceModal.originalStatusById[row.key] !== row.status
+      ));
 
       if (changedRows.length === 0) {
         setResult({ success: false, message: 'No attendance changes to save.' });
@@ -378,9 +408,27 @@ export default function FinesSummary() {
       };
 
       for (const row of changedRows) {
-        await updateAttendance(row.id, { status: row.status });
+        if (row.id) {
+          if (row.status !== NOT_INCLUDED_STATUS) {
+            await updateAttendance(row.id, { status: row.status });
+          }
+        } else if (row.status !== NOT_INCLUDED_STATUS) {
+          // Create attendance for previously not-included event/session rows.
+          await recordAttendance(
+            studentId,
+            'manual',
+            row.status,
+            row.eventId,
+            row.session,
+            row.date
+          );
+        }
 
         if (!studentId) continue;
+
+        if (row.status === NOT_INCLUDED_STATUS) {
+          continue;
+        }
 
         const existingFine = findMatchingFine(row);
         const eventFineAmount = Number(row.eventFineAmount || 0);
@@ -768,7 +816,7 @@ export default function FinesSummary() {
                             </button>
                             <button
                               onClick={() => openAttendanceModal(student, studentAttendance)}
-                              disabled={studentAttendance.length === 0}
+                              disabled={events.length === 0}
                               className="px-2 py-1 text-xs font-medium rounded bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
                               title="Edit attendance status for this student"
                             >
@@ -1087,17 +1135,18 @@ export default function FinesSummary() {
                   </thead>
                   <tbody className="divide-y">
                     {attendanceModal.records.map((row, idx) => (
-                      <tr key={`${row.id || 'tmp'}-${idx}`} className="hover:bg-gray-50">
+                      <tr key={row.key || `${row.id || 'tmp'}-${idx}`} className="hover:bg-gray-50">
                         <td className="px-3 py-2 text-gray-900">{row.eventName || '-'}</td>
                         <td className="px-3 py-2 text-gray-600">{row.date || '-'}</td>
                         <td className="px-3 py-2 text-center text-gray-700">{row.session.replace('_', ' ')}</td>
                         <td className="px-3 py-2 text-center">
                           <select
                             value={row.status}
-                            onChange={(e) => handleModalAttendanceStatusChange(row.id, e.target.value)}
+                            onChange={(e) => handleModalAttendanceStatusChange(row.key, e.target.value)}
                             className="px-2 py-1 border border-gray-300 rounded text-xs"
-                            disabled={row.id === undefined || row.id === null || savingAttendanceEdits}
+                            disabled={savingAttendanceEdits}
                           >
+                            {!row.id && <option value="__not_included__">Not Included</option>}
                             <option value="present">Present</option>
                             <option value="late">Late</option>
                             <option value="excused">Excused</option>

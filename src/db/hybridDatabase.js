@@ -294,10 +294,10 @@ export async function markRemainingStudentsAbsent(eventId) {
 
 // ===== ATTENDANCE =====
 
-export async function recordAttendance(studentId, type = 'qr', status = 'present', eventId = null, session = 'AM_IN') {
+export async function recordAttendance(studentId, type = 'qr', status = 'present', eventId = null, session = 'AM_IN', dateOverride = null) {
   await checkBackendAvailability();
   
-  const today = new Date().toISOString().split('T')[0];
+  const attendanceDate = dateOverride || new Date().toISOString().split('T')[0];
   const normalizedEventId = eventId && typeof eventId === 'object' ? eventId.id : eventId;
   
   if (backendAvailable) {
@@ -305,7 +305,7 @@ export async function recordAttendance(studentId, type = 'qr', status = 'present
       return await apiClient.recordAttendance({
         studentId,
         eventId: normalizedEventId,
-        date: today,
+        date: attendanceDate,
         type,
         status,
         session,
@@ -321,7 +321,7 @@ export async function recordAttendance(studentId, type = 'qr', status = 'present
   
   // Fallback to IndexedDB
   const { recordAttendance: recordLocal } = await import('./database');
-  return recordLocal(studentId, type, status, normalizedEventId, session);
+  return recordLocal(studentId, type, status, normalizedEventId, session, attendanceDate);
 }
 
 export async function getAllAttendance() {
