@@ -644,6 +644,9 @@ export default function FinesSummary() {
             pageSizeOptions={[5, 8, 12]}
             showFooter={false}
             tableClassName="w-full"
+            stickyHeader={true}
+            maxBodyHeight="260px"
+            compact={true}
           />
         ) : (
           <p className="text-xs text-gray-500">No attendance records for this student.</p>
@@ -661,6 +664,9 @@ export default function FinesSummary() {
             pageSizeOptions={[5, 8, 12]}
             showFooter={false}
             tableClassName="w-full"
+            stickyHeader={true}
+            maxBodyHeight="260px"
+            compact={true}
           />
         ) : (
           <p className="text-xs text-gray-500">No fine records for this student.</p>
@@ -1032,6 +1038,8 @@ export default function FinesSummary() {
               initialSortDirection="desc"
               pageSize={25}
               tableClassName="w-full"
+              stickyHeader={true}
+              maxBodyHeight="70vh"
               isRowExpanded={(row) => Boolean(expandedStudents[row.studentId])}
               renderExpandedRow={renderExpandedStudentRow}
               expandedRowColSpan={11}
@@ -1223,6 +1231,9 @@ export default function FinesSummary() {
                   pageSizeOptions={[8, 12, 20]}
                   showFooter={false}
                   tableClassName="w-full text-sm"
+                  stickyHeader={true}
+                  maxBodyHeight="52vh"
+                  compact={true}
                 />
               )}
             </div>

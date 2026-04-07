@@ -355,6 +355,8 @@ export default function StudentsManagement() {
           loadingMessage="Loading students..."
           emptyMessage={searchTerm ? 'No students found matching your search' : 'No students registered yet'}
           tableClassName="min-w-full w-full"
+          stickyHeader={true}
+          maxBodyHeight="70vh"
         />
       )}
 

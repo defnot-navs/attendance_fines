@@ -263,6 +263,8 @@ export default function StudentView() {
                   initialSortDirection="desc"
                   pageSize={10}
                   tableClassName="w-full"
+                  stickyHeader={true}
+                  maxBodyHeight="60vh"
                 />
               )}
             </div>
@@ -385,6 +387,8 @@ export default function StudentView() {
                     initialSortDirection="desc"
                     pageSize={10}
                     tableClassName="w-full"
+                    stickyHeader={true}
+                    maxBodyHeight="60vh"
                   />
                   <div className="mt-2 px-2 text-right text-sm font-semibold text-gray-900">
                     Total: <span className="text-lg font-bold text-red-600">{formatCurrency(totalFines)}</span>

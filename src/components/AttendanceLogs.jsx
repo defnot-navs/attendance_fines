@@ -352,6 +352,8 @@ export default function AttendanceLogs() {
         loadingMessage="Loading attendance records..."
         emptyMessage="No attendance records found"
         tableClassName="min-w-full w-full"
+        stickyHeader={true}
+        maxBodyHeight="70vh"
       />
 
       {/* Back to Top Button */}

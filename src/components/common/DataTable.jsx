@@ -20,6 +20,9 @@ export default function DataTable({
   loadingMessage = 'Loading...',
   tableClassName = 'w-full',
   showFooter = true,
+  stickyHeader = false,
+  maxBodyHeight,
+  compact = false,
   isRowExpanded,
   renderExpandedRow,
   expandedRowColSpan,
@@ -88,15 +91,19 @@ export default function DataTable({
 
   return (
     <div className="bg-white rounded-lg shadow overflow-hidden">
-      <div className="overflow-x-auto">
+      <div
+        className={`overflow-x-auto ${maxBodyHeight ? 'overflow-y-auto' : ''}`}
+        style={maxBodyHeight ? { maxHeight: maxBodyHeight } : undefined}
+      >
         <table className={tableClassName}>
-          <thead className="bg-gray-50 border-b">
+          <thead className={`bg-gray-50 border-b ${stickyHeader ? 'sticky top-0 z-10' : ''}`}>
             <tr>
               {columns.map((column) => (
                 <th
                   key={column.key}
-                  className={`px-2 sm:px-4 py-2 sm:py-3 text-left text-xs sm:text-sm font-semibold text-gray-700 ${column.headerClassName || ''} ${column.sortable ? 'cursor-pointer hover:bg-gray-100 select-none' : ''}`}
+                  className={`${compact ? 'px-2 py-1.5' : 'px-2 sm:px-4 py-2 sm:py-3'} text-left text-xs sm:text-sm font-semibold text-gray-700 ${column.headerClassName || ''} ${column.sortable ? 'cursor-pointer hover:bg-gray-100 select-none' : ''}`}
                   onClick={() => onSort(column)}
+                  style={column.width ? { width: column.width } : undefined}
                 >
                   <div className="flex items-center gap-1 sm:gap-2 whitespace-nowrap">
                     <span>{column.header}</span>
@@ -136,7 +143,8 @@ export default function DataTable({
                         return (
                           <td
                             key={column.key}
-                            className={`px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 ${column.cellClassName || ''}`}
+                            className={`${compact ? 'px-2 py-1.5' : 'px-2 sm:px-4 py-2 sm:py-3'} text-xs sm:text-sm text-gray-900 ${column.cellClassName || ''}`}
+                            style={column.width ? { width: column.width } : undefined}
                           >
                             {content}
                           </td>

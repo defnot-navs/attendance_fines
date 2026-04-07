@@ -727,6 +727,8 @@ export default function MembershipRegistration() {
           ? 'No payment records. Click "Initialize Payments" to create records for all students.'
           : 'No members found matching your search'}
         tableClassName="w-full"
+        stickyHeader={true}
+        maxBodyHeight="70vh"
       />
 
       {/* Payment Modal (Renewal) */}
