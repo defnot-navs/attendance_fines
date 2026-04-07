@@ -5,6 +5,8 @@ import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '
 import { exportToCSV } from '../utils/syncManager';
 import DataTable from './common/DataTable';
 
+const NO_EVENT_KEY = '__NO_EVENT__';
+
 export default function FinesSummary() {
   const [summary, setSummary] = useState([]);
   const [statistics, setStatistics] = useState(null);
@@ -95,12 +97,17 @@ export default function FinesSummary() {
       const allAttendance = await getAllAttendance();
       const allFines = await getAllFines();
 
+      const normalizeEventId = (value) => {
+        if (value === null || value === undefined || value === '') return null;
+        return String(value);
+      };
+
       // Build per-event data using hybrid API data (backend when online, IndexedDB when offline).
       const eventData = {};
       for (const event of allEvents) {
         const eventId = String(event.id);
-        const attendance = allAttendance.filter((a) => String(a.eventId) === eventId);
-        const fines = allFines.filter((f) => String(f.eventId) === eventId);
+        const attendance = allAttendance.filter((a) => normalizeEventId(a.eventId) === eventId);
+        const fines = allFines.filter((f) => normalizeEventId(f.eventId) === eventId);
 
         eventData[eventId] = {
           attendance,
@@ -112,6 +119,18 @@ export default function FinesSummary() {
           excusedCount: attendance.filter((a) => a.status === 'excused').length,
         };
       }
+
+      // Keep uncategorized fines accessible in admin breakdown so they can be managed/deleted.
+      const noEventFines = allFines.filter((f) => normalizeEventId(f.eventId) === null);
+      eventData[NO_EVENT_KEY] = {
+        attendance: [],
+        fines: noEventFines,
+        totalFines: noEventFines.reduce((sum, f) => sum + Number(f.amount || 0), 0),
+        presentCount: 0,
+        lateCount: 0,
+        absentCount: 0,
+        excusedCount: 0,
+      };
       
       setSummary(enhancedSummary);
       setStatistics({...stats, ...membershipStats});
@@ -513,7 +532,18 @@ export default function FinesSummary() {
     return (eventAttendance[eventId]?.fines || [])
       .filter((f) => f.studentId === student.studentId)
       .map((fine) => ({ event, fine }));
-  });
+  }).concat(
+    (eventAttendance[NO_EVENT_KEY]?.fines || [])
+      .filter((f) => f.studentId === student.studentId)
+      .map((fine) => ({
+        event: {
+          id: NO_EVENT_KEY,
+          name: 'General / No Event',
+          date: fine.date || '',
+        },
+        fine,
+      }))
+  );
 
   const renderExpandedStudentRow = (student) => {
     const studentAttendance = getStudentAttendanceDetails(student);
