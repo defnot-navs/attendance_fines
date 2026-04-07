@@ -522,6 +522,27 @@ app.get('/api/attendance/:studentId', async (req, res) => {
   }
 });
 
+app.put('/api/attendance/:id', async (req, res) => {
+  const { status, type, session, date } = req.body;
+
+  try {
+    const patch = {};
+    if (status !== undefined) patch.status = String(status);
+    if (type !== undefined) patch.type = String(type);
+    if (session !== undefined) patch.session = String(session);
+    if (date !== undefined) patch.date = String(date);
+
+    if (Object.keys(patch).length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+
+    await Attendance.findByIdAndUpdate(req.params.id, { $set: patch });
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.delete('/api/attendance/:id', async (req, res) => {
   try {
     await Attendance.findByIdAndDelete(req.params.id);

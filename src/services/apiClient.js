@@ -146,6 +146,13 @@ class APIClient {
     return this.request(`/attendance/${studentId}`);
   }
 
+  async updateAttendance(id, updates) {
+    return this.request(`/attendance/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
   async deleteAttendance(id) {
     return this.request(`/attendance/${id}`, {
       method: 'DELETE',

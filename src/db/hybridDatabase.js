@@ -395,6 +395,22 @@ export async function clearAllAttendance() {
   return clearLocal();
 }
 
+export async function updateAttendance(attendanceId, updates) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.updateAttendance(attendanceId, updates);
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { updateAttendance: updateLocal } = await import('./database');
+  return updateLocal(attendanceId, updates);
+}
+
 // ===== FINES =====
 
 export async function recordFine(studentId, amount, reason, date = null, eventId = null) {

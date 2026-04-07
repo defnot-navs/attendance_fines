@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 
@@ -16,6 +16,13 @@ export default function FinesSummary() {
   const [result, setResult] = useState(null);
   const [membershipPayments, setMembershipPayments] = useState([]);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [attendanceModal, setAttendanceModal] = useState({
+    open: false,
+    student: null,
+    records: [],
+    originalStatusById: {}
+  });
+  const [savingAttendanceEdits, setSavingAttendanceEdits] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -273,6 +280,82 @@ export default function FinesSummary() {
     } catch (error) {
       setResult({ success: false, message: `Error deleting fine: ${error.message}` });
       setTimeout(() => setResult(null), 3000);
+    }
+  };
+
+  const openAttendanceModal = (student, studentAttendance) => {
+    const rows = [...studentAttendance]
+      .map(({ event, attendance }) => ({
+        id: attendance.id,
+        eventName: event.name,
+        date: attendance.date || event.date,
+        session: attendance.session || 'AM_IN',
+        status: attendance.status || 'absent',
+        type: attendance.type || 'manual',
+        timestamp: attendance.timestamp || null,
+      }))
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+    const originalStatusById = {};
+    rows.forEach((row) => {
+      if (row.id !== undefined && row.id !== null) {
+        originalStatusById[String(row.id)] = row.status;
+      }
+    });
+
+    setAttendanceModal({
+      open: true,
+      student,
+      records: rows,
+      originalStatusById,
+    });
+  };
+
+  const closeAttendanceModal = (force = false) => {
+    if (savingAttendanceEdits && !force) return;
+    setAttendanceModal({ open: false, student: null, records: [], originalStatusById: {} });
+  };
+
+  const handleModalAttendanceStatusChange = (attendanceId, nextStatus) => {
+    setAttendanceModal((prev) => ({
+      ...prev,
+      records: prev.records.map((row) =>
+        String(row.id) === String(attendanceId)
+          ? { ...row, status: nextStatus }
+          : row
+      ),
+    }));
+  };
+
+  const handleSaveAttendanceEdits = async () => {
+    try {
+      setSavingAttendanceEdits(true);
+
+      const changedRows = attendanceModal.records.filter((row) => {
+        if (row.id === undefined || row.id === null) return false;
+        return attendanceModal.originalStatusById[String(row.id)] !== row.status;
+      });
+
+      if (changedRows.length === 0) {
+        setResult({ success: false, message: 'No attendance changes to save.' });
+        setTimeout(() => setResult(null), 2000);
+        closeAttendanceModal(true);
+        return;
+      }
+
+      for (const row of changedRows) {
+        await updateAttendance(row.id, { status: row.status });
+      }
+
+      setResult({ success: true, message: `Updated ${changedRows.length} attendance record(s).` });
+      closeAttendanceModal(true);
+      await loadData();
+      setTimeout(() => setResult(null), 2500);
+    } catch (error) {
+      setResult({ success: false, message: `Error updating attendance: ${error.message}` });
+      setTimeout(() => setResult(null), 3000);
+    } finally {
+      setSavingAttendanceEdits(false);
     }
   };
 
@@ -596,6 +679,14 @@ export default function FinesSummary() {
                             >
                               {isExpanded ? 'Hide' : 'View'}
                             </button>
+                            <button
+                              onClick={() => openAttendanceModal(student, studentAttendance)}
+                              disabled={studentAttendance.length === 0}
+                              className="px-2 py-1 text-xs font-medium rounded bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+                              title="Edit attendance status for this student"
+                            >
+                              Edit
+                            </button>
                           </div>
                         </td>
                       </tr>
@@ -872,6 +963,85 @@ export default function FinesSummary() {
             </div>
           )}
         </>
+      )}
+
+      {attendanceModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={closeAttendanceModal} />
+          <div className="relative z-10 w-full max-w-4xl bg-white rounded-xl shadow-xl border">
+            <div className="px-4 py-3 border-b flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Edit Attendance</h3>
+                <p className="text-sm text-gray-600">
+                  {attendanceModal.student?.name} ({attendanceModal.student?.studentId})
+                </p>
+              </div>
+              <button
+                onClick={closeAttendanceModal}
+                disabled={savingAttendanceEdits}
+                className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200 disabled:opacity-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-4 max-h-[70vh] overflow-auto">
+              {attendanceModal.records.length === 0 ? (
+                <p className="text-sm text-gray-500">No attendance records found for this student.</p>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b sticky top-0">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
+                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Session</th>
+                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {attendanceModal.records.map((row, idx) => (
+                      <tr key={`${row.id || 'tmp'}-${idx}`} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 text-gray-900">{row.eventName || '-'}</td>
+                        <td className="px-3 py-2 text-gray-600">{row.date || '-'}</td>
+                        <td className="px-3 py-2 text-center text-gray-700">{row.session.replace('_', ' ')}</td>
+                        <td className="px-3 py-2 text-center">
+                          <select
+                            value={row.status}
+                            onChange={(e) => handleModalAttendanceStatusChange(row.id, e.target.value)}
+                            className="px-2 py-1 border border-gray-300 rounded text-xs"
+                            disabled={row.id === undefined || row.id === null || savingAttendanceEdits}
+                          >
+                            <option value="present">Present</option>
+                            <option value="late">Late</option>
+                            <option value="excused">Excused</option>
+                            <option value="absent">Absent</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t flex items-center justify-end gap-2">
+              <button
+                onClick={closeAttendanceModal}
+                disabled={savingAttendanceEdits}
+                className="px-3 py-2 text-sm rounded border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveAttendanceEdits}
+                disabled={savingAttendanceEdits || attendanceModal.records.length === 0}
+                className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                {savingAttendanceEdits ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Back to Top Button */}

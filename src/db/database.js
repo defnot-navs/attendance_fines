@@ -355,6 +355,34 @@ export async function deleteAttendance(attendanceId) {
 }
 
 /**
+ * Update a single attendance record by ID
+ */
+export async function updateAttendance(attendanceId, updates) {
+  try {
+    const patch = {};
+
+    if (updates.status !== undefined) {
+      patch.status = String(updates.status);
+    }
+    if (updates.type !== undefined) {
+      patch.type = String(updates.type);
+    }
+    if (updates.session !== undefined) {
+      patch.session = String(updates.session);
+    }
+    if (updates.date !== undefined) {
+      patch.date = String(updates.date);
+    }
+
+    await db.attendance.update(attendanceId, patch);
+    return true;
+  } catch (error) {
+    console.error('Error updating attendance:', error);
+    throw error;
+  }
+}
+
+/**
  * Clear all attendance records
  */
 export async function clearAllAttendance() {

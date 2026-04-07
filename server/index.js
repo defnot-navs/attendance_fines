@@ -496,6 +496,45 @@ app.get('/api/attendance/:studentId', async (req, res) => {
   }
 });
 
+// Update attendance record
+app.put('/api/attendance/:id', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+  const { status, type, session, date } = req.body;
+  const updates = [];
+  const values = [];
+
+  if (status !== undefined) {
+    updates.push('status = ?');
+    values.push(status);
+  }
+  if (type !== undefined) {
+    updates.push('type = ?');
+    values.push(type);
+  }
+  if (session !== undefined) {
+    updates.push('session = ?');
+    values.push(session);
+  }
+  if (date !== undefined) {
+    updates.push('date = ?');
+    values.push(date);
+  }
+
+  if (updates.length === 0) {
+    return res.status(400).json({ error: 'No updates provided' });
+  }
+
+  values.push(req.params.id);
+
+  try {
+    await pool.query(`UPDATE attendance SET ${updates.join(', ')} WHERE id = ?`, values);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Delete attendance record
 app.delete('/api/attendance/:id', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not available' });
