@@ -102,6 +102,7 @@ export default function FinesSummary() {
         if (value === null || value === undefined || value === '') return null;
         return String(value);
       };
+      const knownEventIds = new Set(allEvents.map((event) => normalizeEventId(event.id)));
 
       // Build per-event data using hybrid API data (backend when online, IndexedDB when offline).
       const eventData = {};
@@ -121,10 +122,16 @@ export default function FinesSummary() {
         };
       }
 
-      const noEventAttendance = allAttendance.filter((a) => normalizeEventId(a.eventId) === null);
+      const noEventAttendance = allAttendance.filter((a) => {
+        const normalized = normalizeEventId(a.eventId);
+        return normalized === null || !knownEventIds.has(normalized);
+      });
 
       // Keep uncategorized fines accessible in admin breakdown so they can be managed/deleted.
-      const noEventFines = allFines.filter((f) => normalizeEventId(f.eventId) === null);
+      const noEventFines = allFines.filter((f) => {
+        const normalized = normalizeEventId(f.eventId);
+        return normalized === null || !knownEventIds.has(normalized);
+      });
       eventData[NO_EVENT_KEY] = {
         attendance: noEventAttendance,
         fines: noEventFines,
@@ -566,7 +573,7 @@ export default function FinesSummary() {
       .filter((a) => a.studentId === student.studentId)
       .map((attendance) => ({
         event: {
-          id: null,
+          id: attendance.eventId ?? null,
           name: 'General / No Event',
           date: attendance.date || '',
         },
@@ -584,7 +591,7 @@ export default function FinesSummary() {
       .filter((f) => f.studentId === student.studentId)
       .map((fine) => ({
         event: {
-          id: NO_EVENT_KEY,
+          id: fine.eventId ?? NO_EVENT_KEY,
           name: 'General / No Event',
           date: fine.date || '',
         },
