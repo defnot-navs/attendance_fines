@@ -70,7 +70,7 @@ export default function AdminDashboard() {
       {/* Tabs */}
       <div className="bg-white border-b">
         <div className="max-w-7xl mx-auto px-2 sm:px-4">
-          <nav className="flex space-x-1 overflow-x-auto scrollbar-hide -mb-px">
+          <nav className="flex flex-nowrap sm:flex-wrap gap-1 overflow-x-auto sm:overflow-visible scrollbar-hide -mb-px">
             {tabs.map((tab) => {
               const Icon = tab.icon;
               return (
