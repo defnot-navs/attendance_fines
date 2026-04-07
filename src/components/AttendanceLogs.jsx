@@ -56,9 +56,14 @@ export default function AttendanceLogs() {
     }
   };
 
+  const normalizeEventId = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    return String(value);
+  };
+
   const filteredLogs = logs
     .filter(log => filter === 'all' || log.type === filter)
-    .filter(log => eventFilter === 'all' || log.eventId === parseInt(eventFilter));
+    .filter(log => eventFilter === 'all' || normalizeEventId(log.eventId) === String(eventFilter));
 
   const getStatusBadge = (status) => {
     const badges = {
@@ -230,9 +235,9 @@ export default function AttendanceLogs() {
           {Object.values(events)
             .sort((a, b) => new Date(b.date) - new Date(a.date))
             .map(event => {
-              const count = logs.filter(l => l.eventId === event.id).length;
+              const count = logs.filter(l => normalizeEventId(l.eventId) === normalizeEventId(event.id)).length;
               return (
-                <option key={event.id} value={event.id}>
+                <option key={event.id} value={String(event.id)}>
                   {event.name} - {new Date(event.date).toLocaleDateString()} ({count})
                 </option>
               );
