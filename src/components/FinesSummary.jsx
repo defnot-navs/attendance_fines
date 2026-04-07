@@ -595,50 +595,54 @@ export default function FinesSummary() {
                           </div>
                         </td>
                       </tr>
-                      {isExpanded && (studentAttendance.length > 0 || studentFinesDetailed.length > 0) && (
+                      {isExpanded && (
                         <tr>
                           <td colSpan="11" className="px-4 py-3 bg-gray-50">
                             <div className="text-sm">
                               <h4 className="font-semibold text-gray-900 mb-3">Attendance Records for {student.name}</h4>
-                              <div className="bg-white rounded-lg border overflow-hidden">
-                                <table className="w-full">
-                                  <thead className="bg-gray-100 border-b">
-                                    <tr>
-                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
-                                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
-                                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Session</th>
-                                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
-                                      <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Time</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y">
-                                    {studentAttendance.map(({ event, attendance }, detailIdx) => (
-                                      <tr key={detailIdx} className="hover:bg-gray-50">
-                                        <td className="px-3 py-2 text-xs text-gray-900">{event.name}</td>
-                                        <td className="px-3 py-2 text-xs text-gray-600">
-                                          {new Date(event.date).toLocaleDateString()}
-                                        </td>
-                                        <td className="px-3 py-2 text-center text-xs text-gray-700">
-                                          {attendance?.session ? attendance.session.replace('_', ' ') : '-'}
-                                        </td>
-                                        <td className="px-3 py-2 text-center">
-                                          <span className={`px-2 py-1 text-xs font-medium rounded ${
-                                            attendance.status === 'present' ? 'bg-green-100 text-green-800' :
-                                            attendance.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
-                                            attendance.status === 'excused' ? 'bg-blue-100 text-blue-800' :
-                                            'bg-red-100 text-red-800'
-                                          }`}>
-                                            {attendance.status.toUpperCase()}
-                                          </span>
-                                        </td>
-                                        <td className="px-3 py-2 text-xs text-gray-600 text-center">
-                                          {attendance?.timestamp ? new Date(attendance.timestamp).toLocaleTimeString() : '-'}
-                                        </td>
+                              {studentAttendance.length > 0 ? (
+                                <div className="bg-white rounded-lg border overflow-hidden">
+                                  <table className="w-full">
+                                    <thead className="bg-gray-100 border-b">
+                                      <tr>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
+                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
+                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Session</th>
+                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
+                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Time</th>
                                       </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
-                              </div>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                      {studentAttendance.map(({ event, attendance }, detailIdx) => (
+                                        <tr key={detailIdx} className="hover:bg-gray-50">
+                                          <td className="px-3 py-2 text-xs text-gray-900">{event.name}</td>
+                                          <td className="px-3 py-2 text-xs text-gray-600">
+                                            {new Date(event.date).toLocaleDateString()}
+                                          </td>
+                                          <td className="px-3 py-2 text-center text-xs text-gray-700">
+                                            {attendance?.session ? attendance.session.replace('_', ' ') : '-'}
+                                          </td>
+                                          <td className="px-3 py-2 text-center">
+                                            <span className={`px-2 py-1 text-xs font-medium rounded ${
+                                              attendance.status === 'present' ? 'bg-green-100 text-green-800' :
+                                              attendance.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
+                                              attendance.status === 'excused' ? 'bg-blue-100 text-blue-800' :
+                                              'bg-red-100 text-red-800'
+                                            }`}>
+                                              {attendance.status.toUpperCase()}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2 text-xs text-gray-600 text-center">
+                                            {attendance?.timestamp ? new Date(attendance.timestamp).toLocaleTimeString() : '-'}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-500">No attendance records for this student.</p>
+                              )}
 
                               <h4 className="font-semibold text-gray-900 mt-4 mb-3">Fines Breakdown for {student.name}</h4>
                               {studentFinesDetailed.length > 0 ? (
