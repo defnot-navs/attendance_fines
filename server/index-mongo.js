@@ -652,6 +652,33 @@ app.delete('/api/fines', async (req, res) => {
   }
 });
 
+app.post('/api/cleanup/no-event-records', async (req, res) => {
+  try {
+    const events = await Event.find().select({ _id: 1 }).lean();
+    const validEventIds = events.map((e) => String(e._id));
+
+    const noEventOrOrphanQuery = {
+      $or: [
+        { event_id: null },
+        { event_id: '' },
+        { event_id: { $exists: false } },
+        { event_id: { $nin: validEventIds } },
+      ],
+    };
+
+    const attendanceResult = await Attendance.deleteMany(noEventOrOrphanQuery);
+    const finesResult = await Fine.deleteMany(noEventOrOrphanQuery);
+
+    res.json({
+      success: true,
+      attendanceDeleted: Number(attendanceResult.deletedCount || 0),
+      finesDeleted: Number(finesResult.deletedCount || 0),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/fines-summary', async (req, res) => {
   try {
     const students = await Student.find().lean();

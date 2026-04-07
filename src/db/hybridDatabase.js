@@ -427,6 +427,60 @@ export async function deleteAttendance(attendanceId) {
   return deleteLocal(attendanceId);
 }
 
+export async function cleanupNoEventRecords() {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.cleanupNoEventRecords();
+    } catch (error) {
+      console.error('Backend cleanup failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const {
+    getAllEvents: getEventsLocal,
+    getAllAttendance: getAttendanceLocal,
+    getAllFines: getFinesLocal,
+    deleteAttendance: deleteAttendanceLocal,
+    deleteFine: deleteFineLocal,
+  } = await import('./database');
+
+  const normalizeEventId = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    return String(value);
+  };
+
+  const localEvents = await getEventsLocal();
+  const knownEventIds = new Set(localEvents.map((event) => normalizeEventId(event.id)));
+
+  const localAttendance = await getAttendanceLocal();
+  const localFines = await getFinesLocal();
+
+  const noEventAttendance = localAttendance.filter((row) => {
+    const eventId = normalizeEventId(row.eventId);
+    return eventId === null || !knownEventIds.has(eventId);
+  });
+  const noEventFines = localFines.filter((row) => {
+    const eventId = normalizeEventId(row.eventId);
+    return eventId === null || !knownEventIds.has(eventId);
+  });
+
+  for (const row of noEventAttendance) {
+    await deleteAttendanceLocal(row.id);
+  }
+  for (const row of noEventFines) {
+    await deleteFineLocal(row.id);
+  }
+
+  return {
+    success: true,
+    attendanceDeleted: noEventAttendance.length,
+    finesDeleted: noEventFines.length,
+  };
+}
+
 // ===== FINES =====
 
 export async function recordFine(studentId, amount, reason, date = null, eventId = null) {

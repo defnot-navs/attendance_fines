@@ -217,6 +217,12 @@ class APIClient {
     });
   }
 
+  async cleanupNoEventRecords() {
+    return this.request('/cleanup/no-event-records', {
+      method: 'POST',
+    });
+  }
+
   // ===== EXCUSES =====
 
   async addExcuse(excuse) {

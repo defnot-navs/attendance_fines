@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, deleteAttendance, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, deleteAttendance, cleanupNoEventRecords, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 import DataTable from './common/DataTable';
@@ -248,17 +248,13 @@ export default function FinesSummary() {
     if (!confirmed) return;
 
     try {
-      for (const attendance of noEventAttendance) {
-        await deleteAttendance(attendance.id);
-      }
-
-      for (const fine of noEventFines) {
-        await deleteFine(fine.id);
-      }
+      const cleanupResult = await cleanupNoEventRecords();
+      const attendanceDeleted = Number(cleanupResult?.attendanceDeleted || 0);
+      const finesDeleted = Number(cleanupResult?.finesDeleted || 0);
 
       setResult({
         success: true,
-        message: `Deleted ${noEventAttendance.length} attendance and ${noEventFines.length} fine General / No Event record(s).`,
+        message: `Deleted ${attendanceDeleted} attendance and ${finesDeleted} fine General / No Event record(s).`,
       });
       await loadData();
       setTimeout(() => setResult(null), 3000);
