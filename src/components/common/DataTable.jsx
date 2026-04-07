@@ -19,6 +19,9 @@ export default function DataTable({
   loading = false,
   loadingMessage = 'Loading...',
   tableClassName = 'w-full',
+  isRowExpanded,
+  renderExpandedRow,
+  expandedRowColSpan,
 }) {
   const [sortState, setSortState] = useState({
     key: initialSortKey,
@@ -117,24 +120,39 @@ export default function DataTable({
                 </td>
               </tr>
             ) : (
-              pagedRows.map((row, index) => (
-                <tr key={rowKey ? rowKey(row) : index} className="hover:bg-gray-50">
-                  {columns.map((column) => {
-                    const content = column.render
-                      ? column.render(row)
-                      : (column.accessor ? column.accessor(row) : defaultAccessor(row, column.key));
+              pagedRows.map((row, index) => {
+                const key = rowKey ? rowKey(row) : index;
+                const expanded = typeof isRowExpanded === 'function' ? isRowExpanded(row) : false;
 
-                    return (
-                      <td
-                        key={column.key}
-                        className={`px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 ${column.cellClassName || ''}`}
-                      >
-                        {content}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))
+                return (
+                  <React.Fragment key={key}>
+                    <tr className="hover:bg-gray-50">
+                      {columns.map((column) => {
+                        const content = column.render
+                          ? column.render(row)
+                          : (column.accessor ? column.accessor(row) : defaultAccessor(row, column.key));
+
+                        return (
+                          <td
+                            key={column.key}
+                            className={`px-2 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-900 ${column.cellClassName || ''}`}
+                          >
+                            {content}
+                          </td>
+                        );
+                      })}
+                    </tr>
+
+                    {expanded && typeof renderExpandedRow === 'function' && (
+                      <tr>
+                        <td colSpan={expandedRowColSpan || columns.length} className="p-0">
+                          {renderExpandedRow(row)}
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })
             )}
           </tbody>
         </table>

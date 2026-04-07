@@ -3,6 +3,7 @@ import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, Che
 import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
+import DataTable from './common/DataTable';
 
 export default function FinesSummary() {
   const [summary, setSummary] = useState([]);
@@ -500,6 +501,260 @@ export default function FinesSummary() {
       )
     : summary;
 
+  const getStudentAttendanceDetails = (student) => events.flatMap((event) => {
+    const eventId = String(event.id);
+    return (eventAttendance[eventId]?.attendance || [])
+      .filter((a) => a.studentId === student.studentId)
+      .map((attendance) => ({ event, attendance }));
+  });
+
+  const getStudentFineDetails = (student) => events.flatMap((event) => {
+    const eventId = String(event.id);
+    return (eventAttendance[eventId]?.fines || [])
+      .filter((f) => f.studentId === student.studentId)
+      .map((fine) => ({ event, fine }));
+  });
+
+  const renderExpandedStudentRow = (student) => {
+    const studentAttendance = getStudentAttendanceDetails(student);
+    const studentFinesDetailed = getStudentFineDetails(student);
+
+    return (
+      <div className="px-4 py-3 bg-gray-50 text-sm">
+        <h4 className="font-semibold text-gray-900 mb-3">Attendance Records for {student.name}</h4>
+        {studentAttendance.length > 0 ? (
+          <div className="bg-white rounded-lg border overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-100 border-b">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
+                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Session</th>
+                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
+                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {studentAttendance.map(({ event, attendance }, detailIdx) => (
+                  <tr key={detailIdx} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-xs text-gray-900">{event.name}</td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{new Date(event.date).toLocaleDateString()}</td>
+                    <td className="px-3 py-2 text-center text-xs text-gray-700">{attendance?.session ? attendance.session.replace('_', ' ') : '-'}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`px-2 py-1 text-xs font-medium rounded ${
+                        attendance.status === 'present' ? 'bg-green-100 text-green-800' :
+                        attendance.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
+                        attendance.status === 'excused' ? 'bg-blue-100 text-blue-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {attendance.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-600 text-center">
+                      {attendance?.timestamp ? new Date(attendance.timestamp).toLocaleTimeString() : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">No attendance records for this student.</p>
+        )}
+
+        <h4 className="font-semibold text-gray-900 mt-4 mb-3">Fines Breakdown for {student.name}</h4>
+        {studentFinesDetailed.length > 0 ? (
+          <div className="bg-white rounded-lg border overflow-hidden">
+            <table className="w-full">
+              <thead className="bg-gray-100 border-b">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Reason</th>
+                  <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Amount</th>
+                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
+                  <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {studentFinesDetailed.map(({ event, fine }, fineIdx) => (
+                  <tr key={fineIdx} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-xs text-gray-900">{event.name}</td>
+                    <td className="px-3 py-2 text-xs text-gray-600">{fine.date || '-'}</td>
+                    <td className="px-3 py-2 text-xs text-gray-700">{fine.reason}</td>
+                    <td className="px-3 py-2 text-xs text-right font-semibold text-red-600">{formatCurrency(fine.amount)}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`px-2 py-1 text-xs font-medium rounded ${
+                        fine.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                      }`}>
+                        {fine.paid ? 'PAID' : 'UNPAID'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => handleToggleFinePayment(fine)}
+                          className={`px-2 py-1 text-xs font-medium rounded ${
+                            fine.paid
+                              ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
+                              : 'bg-green-100 text-green-800 hover:bg-green-200'
+                          }`}
+                        >
+                          {fine.paid ? 'Unpay' : 'Pay'}
+                        </button>
+                        <button
+                          onClick={() => handleEditFine(fine)}
+                          className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
+                        >
+                          Edit Fine
+                        </button>
+                        <button
+                          onClick={() => handleDeleteFine(fine)}
+                          className="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-xs text-gray-500">No fine records for this student.</p>
+        )}
+      </div>
+    );
+  };
+
+  const finesSummaryColumns = [
+    {
+      key: 'studentId',
+      header: 'Student ID',
+      sortable: true,
+      accessor: (row) => row.studentId,
+      render: (row) => (
+        <button
+          onClick={() => toggleStudent(row.studentId)}
+          className="flex items-center gap-2 hover:text-blue-600"
+          title="Click to view attendance details"
+        >
+          {expandedStudents[row.studentId] ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+          {row.studentId}
+        </button>
+      ),
+    },
+    { key: 'name', header: 'Name', sortable: true, accessor: (row) => row.name },
+    { key: 'program', header: 'Program', sortable: true, accessor: (row) => row.program || '-', cellClassName: 'text-gray-600' },
+    {
+      key: 'yearLevel',
+      header: 'Year',
+      sortable: true,
+      accessor: (row) => Number(row.yearLevel || 0),
+      render: (row) => row.yearLevel ? `${row.yearLevel}${['st', 'nd', 'rd', 'th'][row.yearLevel > 3 ? 3 : row.yearLevel - 1]} Year` : '-',
+      cellClassName: 'text-gray-600',
+    },
+    {
+      key: 'totalFines',
+      header: 'Total Fines',
+      sortable: true,
+      accessor: (row) => Number(row.totalFines || 0),
+      render: (row) => <span className={`font-semibold ${row.totalFines > 0 ? 'text-blue-600' : 'text-gray-600'}`}>{formatCurrency(row.totalFines)}</span>,
+      headerClassName: 'text-right',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'unpaidFines',
+      header: 'Unpaid',
+      sortable: true,
+      accessor: (row) => Number(row.unpaidFines || 0),
+      render: (row) => <span className={`font-semibold ${row.unpaidFines > 0 ? 'text-red-600' : 'text-gray-400'}`}>{formatCurrency(row.unpaidFines)}</span>,
+      headerClassName: 'text-right text-red-700',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'paidFines',
+      header: 'Paid',
+      sortable: true,
+      accessor: (row) => Number(row.paidFines || 0),
+      render: (row) => <span className={`font-semibold ${row.paidFines > 0 ? 'text-green-600' : 'text-gray-400'}`}>{formatCurrency(row.paidFines)}</span>,
+      headerClassName: 'text-right text-green-700',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'fineCount',
+      header: 'Count',
+      sortable: true,
+      accessor: (row) => Number(row.fineCount || 0),
+      render: (row) => (
+        <>
+          {row.fineCount}
+          {row.paidCount > 0 && <span className="ml-1 text-xs text-green-600">({row.paidCount} paid)</span>}
+        </>
+      ),
+      cellClassName: 'text-right text-gray-600',
+      headerClassName: 'text-right',
+    },
+    {
+      key: 'membership',
+      header: 'Membership',
+      sortable: true,
+      accessor: (row) => Number(row.unpaidMembership || row.paidMembership || 0),
+      render: (row) => row.unpaidMembership > 0
+        ? <span className="font-semibold text-red-600">{formatCurrency(row.unpaidMembership)}</span>
+        : row.paidMembership > 0
+          ? <span className="font-semibold text-green-600">{formatCurrency(row.paidMembership)} ✓</span>
+          : <span className="text-gray-400">-</span>,
+      headerClassName: 'text-right text-indigo-700',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'totalDues',
+      header: 'Total Dues',
+      sortable: true,
+      accessor: (row) => Number(row.totalDues || 0),
+      render: (row) => <span className={`font-bold ${row.totalDues > 0 ? 'text-orange-600' : 'text-gray-400'}`}>{formatCurrency(row.totalDues || 0)}</span>,
+      headerClassName: 'text-right text-orange-700',
+      cellClassName: 'text-right',
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      sortable: false,
+      headerClassName: 'text-center',
+      cellClassName: 'text-center',
+      render: (row) => {
+        const studentAttendance = getStudentAttendanceDetails(row);
+        return (
+          <div className="flex flex-wrap items-center justify-center gap-1">
+            <button
+              onClick={() => handleMarkStudentFinesAsPaid(row.studentId)}
+              disabled={row.unpaidFines <= 0}
+              className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800 hover:bg-green-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+            >
+              Mark Paid
+            </button>
+            <button
+              onClick={() => toggleStudent(row.studentId)}
+              className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
+            >
+              {expandedStudents[row.studentId] ? 'Hide' : 'View'}
+            </button>
+            <button
+              onClick={() => openAttendanceModal(row, studentAttendance)}
+              disabled={events.length === 0}
+              className="px-2 py-1 text-xs font-medium rounded bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+              title="Edit attendance status for this student"
+            >
+              Edit Att.
+            </button>
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="bg-white rounded-lg shadow p-3 sm:p-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-3">
@@ -692,261 +947,19 @@ export default function FinesSummary() {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto mb-6">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Student ID</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Program</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-700">Year</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Total Fines</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-red-700">Unpaid</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-green-700">Paid</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-gray-700">Count</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-indigo-700">Membership</th>
-                  <th className="px-4 py-3 text-right text-sm font-semibold text-orange-700">Total Dues</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-700">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {filteredSummary.map((student, idx) => {
-                  const isExpanded = expandedStudents[student.studentId];
-                  const studentAttendance = events.flatMap((event) => {
-                    const eventId = String(event.id);
-                    const attendanceRecords = (eventAttendance[eventId]?.attendance || [])
-                      .filter((a) => a.studentId === student.studentId)
-                      .map((attendance) => ({ event, attendance }));
-
-                    return attendanceRecords;
-                  });
-
-                  const studentFinesDetailed = events.flatMap((event) => {
-                    const eventId = String(event.id);
-                    const fineRecords = (eventAttendance[eventId]?.fines || [])
-                      .filter((f) => f.studentId === student.studentId)
-                      .map((fine) => ({ event, fine }));
-
-                    return fineRecords;
-                  });
-
-                  return (
-                    <React.Fragment key={idx}>
-                      <tr className="hover:bg-gray-50">
-                        <td className="px-4 py-3 text-sm text-gray-900">
-                          <button
-                            onClick={() => toggleStudent(student.studentId)}
-                            className="flex items-center gap-2 hover:text-blue-600"
-                            title="Click to view attendance details"
-                          >
-                            {isExpanded ? (
-                              <ChevronDown className="w-4 h-4" />
-                            ) : (
-                              <ChevronRight className="w-4 h-4" />
-                            )}
-                            {student.studentId}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-900">{student.name}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{student.program || '-'}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">
-                          {student.yearLevel ? `${student.yearLevel}${['st', 'nd', 'rd', 'th'][student.yearLevel > 3 ? 3 : student.yearLevel - 1]} Year` : '-'}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-right">
-                          <span className={`font-semibold ${
-                            student.totalFines > 0 ? 'text-blue-600' : 'text-gray-600'
-                          }`}>
-                            {formatCurrency(student.totalFines)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-right">
-                          <span className={`font-semibold ${
-                            student.unpaidFines > 0 ? 'text-red-600' : 'text-gray-400'
-                          }`}>
-                            {formatCurrency(student.unpaidFines)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-right">
-                          <span className={`font-semibold ${
-                            student.paidFines > 0 ? 'text-green-600' : 'text-gray-400'
-                          }`}>
-                            {formatCurrency(student.paidFines)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600 text-right">
-                          {student.fineCount}
-                          {student.paidCount > 0 && (
-                            <span className="ml-1 text-xs text-green-600">({student.paidCount} paid)</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-right">
-                          {student.unpaidMembership > 0 ? (
-                            <span className="font-semibold text-red-600">
-                              {formatCurrency(student.unpaidMembership)}
-                            </span>
-                          ) : student.paidMembership > 0 ? (
-                            <span className="font-semibold text-green-600">
-                              {formatCurrency(student.paidMembership)} ✓
-                            </span>
-                          ) : (
-                            <span className="text-gray-400">-</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-3 text-sm text-right">
-                          <span className={`font-bold ${
-                            student.totalDues > 0 ? 'text-orange-600' : 'text-gray-400'
-                          }`}>
-                            {formatCurrency(student.totalDues || 0)}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <div className="flex flex-wrap items-center justify-center gap-1">
-                            <button
-                              onClick={() => handleMarkStudentFinesAsPaid(student.studentId)}
-                              disabled={student.unpaidFines <= 0}
-                              className="px-2 py-1 text-xs font-medium rounded bg-green-100 text-green-800 hover:bg-green-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-                            >
-                              Mark Paid
-                            </button>
-                            <button
-                              onClick={() => toggleStudent(student.studentId)}
-                              className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
-                            >
-                              {isExpanded ? 'Hide' : 'View'}
-                            </button>
-                            <button
-                              onClick={() => openAttendanceModal(student, studentAttendance)}
-                              disabled={events.length === 0}
-                              className="px-2 py-1 text-xs font-medium rounded bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
-                              title="Edit attendance status for this student"
-                            >
-                              Edit Att.
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan="11" className="px-4 py-3 bg-gray-50">
-                            <div className="text-sm">
-                              <h4 className="font-semibold text-gray-900 mb-3">Attendance Records for {student.name}</h4>
-                              {studentAttendance.length > 0 ? (
-                                <div className="bg-white rounded-lg border overflow-hidden">
-                                  <table className="w-full">
-                                    <thead className="bg-gray-100 border-b">
-                                      <tr>
-                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
-                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
-                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Session</th>
-                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
-                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Time</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                      {studentAttendance.map(({ event, attendance }, detailIdx) => (
-                                        <tr key={detailIdx} className="hover:bg-gray-50">
-                                          <td className="px-3 py-2 text-xs text-gray-900">{event.name}</td>
-                                          <td className="px-3 py-2 text-xs text-gray-600">
-                                            {new Date(event.date).toLocaleDateString()}
-                                          </td>
-                                          <td className="px-3 py-2 text-center text-xs text-gray-700">
-                                            {attendance?.session ? attendance.session.replace('_', ' ') : '-'}
-                                          </td>
-                                          <td className="px-3 py-2 text-center">
-                                            <span className={`px-2 py-1 text-xs font-medium rounded ${
-                                              attendance.status === 'present' ? 'bg-green-100 text-green-800' :
-                                              attendance.status === 'late' ? 'bg-yellow-100 text-yellow-800' :
-                                              attendance.status === 'excused' ? 'bg-blue-100 text-blue-800' :
-                                              'bg-red-100 text-red-800'
-                                            }`}>
-                                              {attendance.status.toUpperCase()}
-                                            </span>
-                                          </td>
-                                          <td className="px-3 py-2 text-xs text-gray-600 text-center">
-                                            {attendance?.timestamp ? new Date(attendance.timestamp).toLocaleTimeString() : '-'}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-gray-500">No attendance records for this student.</p>
-                              )}
-
-                              <h4 className="font-semibold text-gray-900 mt-4 mb-3">Fines Breakdown for {student.name}</h4>
-                              {studentFinesDetailed.length > 0 ? (
-                                <div className="bg-white rounded-lg border overflow-hidden">
-                                  <table className="w-full">
-                                    <thead className="bg-gray-100 border-b">
-                                      <tr>
-                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Event</th>
-                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Date</th>
-                                        <th className="px-3 py-2 text-left text-xs font-semibold text-gray-700">Reason</th>
-                                        <th className="px-3 py-2 text-right text-xs font-semibold text-gray-700">Amount</th>
-                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Status</th>
-                                        <th className="px-3 py-2 text-center text-xs font-semibold text-gray-700">Action</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y">
-                                      {studentFinesDetailed.map(({ event, fine }, fineIdx) => (
-                                        <tr key={fineIdx} className="hover:bg-gray-50">
-                                          <td className="px-3 py-2 text-xs text-gray-900">{event.name}</td>
-                                          <td className="px-3 py-2 text-xs text-gray-600">{fine.date || '-'}</td>
-                                          <td className="px-3 py-2 text-xs text-gray-700">{fine.reason}</td>
-                                          <td className="px-3 py-2 text-xs text-right font-semibold text-red-600">
-                                            {formatCurrency(fine.amount)}
-                                          </td>
-                                          <td className="px-3 py-2 text-center">
-                                            <span className={`px-2 py-1 text-xs font-medium rounded ${
-                                              fine.paid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                                            }`}>
-                                              {fine.paid ? 'PAID' : 'UNPAID'}
-                                            </span>
-                                          </td>
-                                          <td className="px-3 py-2 text-center">
-                                            <div className="flex items-center justify-center gap-1">
-                                              <button
-                                                onClick={() => handleToggleFinePayment(fine)}
-                                                className={`px-2 py-1 text-xs font-medium rounded ${
-                                                  fine.paid
-                                                    ? 'bg-yellow-100 text-yellow-800 hover:bg-yellow-200'
-                                                    : 'bg-green-100 text-green-800 hover:bg-green-200'
-                                                }`}
-                                              >
-                                                {fine.paid ? 'Unpay' : 'Pay'}
-                                              </button>
-                                              <button
-                                                onClick={() => handleEditFine(fine)}
-                                                className="px-2 py-1 text-xs font-medium rounded bg-blue-100 text-blue-800 hover:bg-blue-200"
-                                              >
-                                                Edit Fine
-                                              </button>
-                                              <button
-                                                onClick={() => handleDeleteFine(fine)}
-                                                className="px-2 py-1 text-xs font-medium rounded bg-red-100 text-red-800 hover:bg-red-200"
-                                              >
-                                                Delete
-                                              </button>
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              ) : (
-                                <p className="text-xs text-gray-500">No fine records for this student.</p>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="mb-6">
+            <DataTable
+              columns={finesSummaryColumns}
+              data={filteredSummary}
+              rowKey={(row) => row.studentId}
+              initialSortKey="totalDues"
+              initialSortDirection="desc"
+              pageSize={25}
+              tableClassName="w-full"
+              isRowExpanded={(row) => Boolean(expandedStudents[row.studentId])}
+              renderExpandedRow={renderExpandedStudentRow}
+              expandedRowColSpan={11}
+            />
           </div>
 
           {/* Events Section */}
