@@ -588,6 +588,7 @@ export default function FinesSummary() {
                   });
 
                   const studentFinesDetailed = events.flatMap((event) => {
+                    const eventId = String(event.id);
                     const fineRecords = (eventAttendance[eventId]?.fines || [])
                       .filter((f) => f.studentId === student.studentId)
                       .map((fine) => ({ event, fine }));
@@ -665,7 +666,7 @@ export default function FinesSummary() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-2">
+                          <div className="flex flex-wrap items-center justify-center gap-1">
                             <button
                               onClick={() => handleMarkStudentFinesAsPaid(student.studentId)}
                               disabled={student.unpaidFines <= 0}
@@ -685,7 +686,7 @@ export default function FinesSummary() {
                               className="px-2 py-1 text-xs font-medium rounded bg-amber-100 text-amber-800 hover:bg-amber-200 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
                               title="Edit attendance status for this student"
                             >
-                              Edit Attendance
+                              Edit Att.
                             </button>
                           </div>
                         </td>
