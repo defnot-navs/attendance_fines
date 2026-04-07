@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, db, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 
@@ -84,21 +84,24 @@ export default function FinesSummary() {
       };
       
       const allEvents = await getAllEvents();
-      
-      // Load attendance and fines per event
+      const allAttendance = await getAllAttendance();
+      const allFines = await getAllFines();
+
+      // Build per-event data using hybrid API data (backend when online, IndexedDB when offline).
       const eventData = {};
       for (const event of allEvents) {
-        const attendance = await db.attendance.where('eventId').equals(event.id).toArray();
-        const fines = await db.fines.where('eventId').equals(event.id).toArray();
-        
-        eventData[event.id] = {
+        const eventId = String(event.id);
+        const attendance = allAttendance.filter((a) => String(a.eventId) === eventId);
+        const fines = allFines.filter((f) => String(f.eventId) === eventId);
+
+        eventData[eventId] = {
           attendance,
           fines,
-          totalFines: fines.reduce((sum, f) => sum + f.amount, 0),
-          presentCount: attendance.filter(a => a.status === 'present').length,
-          lateCount: attendance.filter(a => a.status === 'late').length,
-          absentCount: attendance.filter(a => a.status === 'absent').length,
-          excusedCount: attendance.filter(a => a.status === 'excused').length
+          totalFines: fines.reduce((sum, f) => sum + Number(f.amount || 0), 0),
+          presentCount: attendance.filter((a) => a.status === 'present').length,
+          lateCount: attendance.filter((a) => a.status === 'late').length,
+          absentCount: attendance.filter((a) => a.status === 'absent').length,
+          excusedCount: attendance.filter((a) => a.status === 'excused').length,
         };
       }
       
@@ -493,7 +496,8 @@ export default function FinesSummary() {
                 {filteredSummary.map((student, idx) => {
                   const isExpanded = expandedStudents[student.studentId];
                   const studentAttendance = events.flatMap((event) => {
-                    const attendanceRecords = (eventAttendance[event.id]?.attendance || [])
+                    const eventId = String(event.id);
+                    const attendanceRecords = (eventAttendance[eventId]?.attendance || [])
                       .filter((a) => a.studentId === student.studentId)
                       .map((attendance) => ({ event, attendance }));
 
@@ -501,7 +505,7 @@ export default function FinesSummary() {
                   });
 
                   const studentFinesDetailed = events.flatMap((event) => {
-                    const fineRecords = (eventAttendance[event.id]?.fines || [])
+                    const fineRecords = (eventAttendance[eventId]?.fines || [])
                       .filter((f) => f.studentId === student.studentId)
                       .map((fine) => ({ event, fine }));
 
@@ -728,7 +732,7 @@ export default function FinesSummary() {
               </h3>
               <div className="space-y-2">
                 {events.map((event) => {
-                  const data = eventAttendance[event.id] || {};
+                  const data = eventAttendance[String(event.id)] || {};
                   const isExpanded = expandedEvents[event.id];
                   
                   return (
