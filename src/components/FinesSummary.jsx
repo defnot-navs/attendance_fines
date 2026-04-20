@@ -103,6 +103,48 @@ export default function FinesSummary() {
         if (value === null || value === undefined || value === '') return null;
         return String(value);
       };
+
+      const eventNameById = new Map(
+        allEvents.map((event) => [normalizeEventId(event.id), event.name || `Event ${event.id}`])
+      );
+
+      const buildEventText = (fines) => {
+        const names = [...new Set(
+          fines.map((fine) => {
+            const normalizedId = normalizeEventId(fine.eventId);
+            if (normalizedId === null) return 'General / No Event';
+            return eventNameById.get(normalizedId) || 'General / No Event';
+          })
+        )];
+        return names.length > 0 ? names.join('; ') : '-';
+      };
+
+      const finesByStudent = new Map();
+      const unpaidFinesByStudent = new Map();
+      const paidFinesByStudent = new Map();
+
+      for (const fine of allFines) {
+        const studentId = fine.studentId;
+
+        if (!finesByStudent.has(studentId)) finesByStudent.set(studentId, []);
+        finesByStudent.get(studentId).push(fine);
+
+        if (fine.paid) {
+          if (!paidFinesByStudent.has(studentId)) paidFinesByStudent.set(studentId, []);
+          paidFinesByStudent.get(studentId).push(fine);
+        } else {
+          if (!unpaidFinesByStudent.has(studentId)) unpaidFinesByStudent.set(studentId, []);
+          unpaidFinesByStudent.get(studentId).push(fine);
+        }
+      }
+
+      const enhancedSummaryWithEvents = enhancedSummary.map((student) => ({
+        ...student,
+        fineEventsText: buildEventText(finesByStudent.get(student.studentId) || []),
+        unpaidFineEventsText: buildEventText(unpaidFinesByStudent.get(student.studentId) || []),
+        paidFineEventsText: buildEventText(paidFinesByStudent.get(student.studentId) || []),
+      }));
+
       const knownEventIds = new Set(allEvents.map((event) => normalizeEventId(event.id)));
 
       // Build per-event data using hybrid API data (backend when online, IndexedDB when offline).
@@ -143,7 +185,7 @@ export default function FinesSummary() {
         excusedCount: 0,
       };
       
-      setSummary(enhancedSummary);
+      setSummary(enhancedSummaryWithEvents);
       setStatistics({...stats, ...membershipStats});
       setEvents(allEvents);
       setEventAttendance(eventData);
@@ -207,6 +249,13 @@ export default function FinesSummary() {
     setStatsDetails({ open: false, type: 'total' });
   };
 
+  const getStatsDetailEventsText = (studentRow) => {
+    if (!studentRow) return '-';
+    if (statsDetails.type === 'unpaid') return studentRow.unpaidFineEventsText || '-';
+    if (statsDetails.type === 'paid') return studentRow.paidFineEventsText || '-';
+    return studentRow.fineEventsText || '-';
+  };
+
   const handleExportStatsDetails = () => {
     const rows = getStatsDetailRows(statsDetails.type);
     if (rows.length === 0) {
@@ -219,6 +268,7 @@ export default function FinesSummary() {
       Name: s.name,
       Program: s.program || '-',
       Year: s.yearLevel || '-',
+      Events: getStatsDetailEventsText(s),
       'Total Fines': Number(s.totalFines || 0),
       'Unpaid Fines': Number(s.unpaidFines || 0),
       'Paid Fines': Number(s.paidFines || 0),
@@ -1028,6 +1078,17 @@ export default function FinesSummary() {
       accessor: (row) => Number(row.yearLevel || 0),
       render: (row) => row.yearLevel ? `${row.yearLevel}${['st', 'nd', 'rd', 'th'][row.yearLevel > 3 ? 3 : row.yearLevel - 1]} Year` : '-',
       cellClassName: 'text-gray-600',
+    },
+    {
+      key: 'events',
+      header: 'Events',
+      sortable: true,
+      accessor: (row) => getStatsDetailEventsText(row),
+      render: (row) => (
+        <span className="text-gray-700" title={getStatsDetailEventsText(row)}>
+          {getStatsDetailEventsText(row)}
+        </span>
+      ),
     },
     {
       key: 'totalFines',
