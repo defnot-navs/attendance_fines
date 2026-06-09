@@ -143,6 +143,58 @@ export async function getAllStudents() {
   return getAllStudentsLocal();
 }
 
+/**
+ * Delete a single student (tries backend first, falls back to IndexedDB)
+ * @param {{id?: number, studentId?: string}} student
+ */
+export async function deleteStudent(student) {
+  await checkBackendAvailability();
+
+  const { id, studentId } = student || {};
+
+  if (backendAvailable) {
+    try {
+      // If backend expects internal id, prefer id, otherwise pass studentId
+      if (id) {
+        await apiClient.deleteStudent(id);
+      } else if (studentId) {
+        // Try to fetch server-side id by studentId then delete
+        const server = await apiClient.getStudentByStudentId(studentId);
+        if (server && server.id) await apiClient.deleteStudent(server.id);
+      }
+
+      // Also remove any local copies and related records
+      const { db: localDb } = await import('./database');
+      if (id) await localDb.students.delete(id);
+      else if (studentId) await localDb.students.where('studentId').equals(studentId).delete();
+
+      if (studentId) {
+        await Promise.all([
+          localDb.attendance.where('studentId').equals(studentId).delete(),
+          localDb.fines.where('studentId').equals(studentId).delete(),
+          localDb.excuses.where('studentId').equals(studentId).delete(),
+        ]);
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Backend delete failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+      // fallthrough to local deletion
+    }
+  }
+
+  // Fallback to IndexedDB only
+  const { db: localDb } = await import('./database');
+  if (id) {
+    await localDb.students.delete(id);
+  } else if (studentId) {
+    await localDb.students.where('studentId').equals(studentId).delete();
+  }
+
+  return { success: true };
+}
+
 export async function getStudentByStudentId(studentId) {
   await checkBackendAvailability();
   

@@ -33,3 +33,5 @@ workbox-*.js
 # Database
 *.db
 *.sqlite
+.vercel
+.env*

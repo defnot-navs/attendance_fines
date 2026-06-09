@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Search, Trash2, Edit2, Save, X, AlertTriangle, ArrowUp } from 'lucide-react';
-import { getAllStudents, deleteAllStudents, db } from '../db/hybridDatabase';
+import { getAllStudents, deleteAllStudents, deleteStudent, db } from '../db/hybridDatabase';
 import DataTable from './common/DataTable';
 
 export default function StudentsManagement() {
@@ -80,26 +80,13 @@ export default function StudentsManagement() {
     }
 
     try {
-      // Delete related records
-      await db.attendance.where('studentId').equals(student.studentId).delete();
-      await db.fines.where('studentId').equals(student.studentId).delete();
-      await db.excuses.where('studentId').equals(student.studentId).delete();
-      
-      // Delete student
-      await db.students.delete(student.id);
+      await deleteStudent(student);
 
-      setResult({
-        success: true,
-        message: `Student ${student.studentId} deleted successfully`
-      });
-      
+      setResult({ success: true, message: `Student ${student.studentId} deleted successfully` });
       await loadStudents();
       setTimeout(() => setResult(null), 3000);
     } catch (error) {
-      setResult({
-        success: false,
-        message: 'Error deleting student: ' + error.message
-      });
+      setResult({ success: false, message: 'Error deleting student: ' + error.message });
     }
   };
 
