@@ -714,6 +714,140 @@ export async function updateFineRule(type, amount) {
   return updateLocal(type, amount);
 }
 
+// ===== MEMBERSHIP PAYMENTS =====
+
+export async function saveMembershipPayment(payment) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.saveMembershipPayment({
+        studentId: payment.studentId,
+        amount: payment.amount,
+        paid: payment.paid || false,
+        paidAt: payment.paidAt || null,
+        paymentMethod: payment.paymentMethod || null,
+        receiptNumber: payment.receiptNumber || null,
+        nationalMembership: payment.nationalMembership || false,
+        nationalReceiptNumber: payment.nationalReceiptNumber || null,
+        academicYear: payment.academicYear,
+        semester: payment.semester,
+      });
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { db: localDb } = await import('./database');
+  return localDb.membershipPayments.add(payment);
+}
+
+export async function deleteMembershipPayment(id) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.deleteMembershipPayment(id);
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { db: localDb } = await import('./database');
+  return localDb.membershipPayments.delete(id);
+}
+
+export async function clearAllMembershipPayments() {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.clearAllMembershipPayments();
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { clearAllMembershipPayments: clearLocal } = await import('./database');
+  return clearLocal();
+}
+
+export async function markMembershipAsPaid(paymentId, paymentMethod, receiptNumber, nationalMembership = false, nationalReceiptNumber = null) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.markMembershipAsPaid(paymentId, {
+        paymentMethod,
+        receiptNumber,
+        nationalMembership,
+        nationalReceiptNumber,
+      });
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { markMembershipAsPaid: markPaidLocal } = await import('./database');
+  return markPaidLocal(paymentId, paymentMethod, receiptNumber, nationalMembership, nationalReceiptNumber);
+}
+
+export async function markMembershipAsUnpaid(paymentId) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.markMembershipAsUnpaid(paymentId);
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { markMembershipAsUnpaid: markUnpaidLocal } = await import('./database');
+  return markUnpaidLocal(paymentId);
+}
+
+export async function getAllMembershipPayments(academicYear = null, semester = null) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      const payments = await apiClient.getAllMembershipPayments();
+      return payments
+        .filter(payment => !academicYear || payment.academic_year === academicYear)
+        .filter(payment => !semester || payment.semester === semester)
+        .map(payment => ({
+          id: payment.id,
+          studentId: payment.student_id,
+          amount: payment.amount,
+          paid: payment.paid,
+          paidAt: payment.paid_at,
+          paymentMethod: payment.payment_method,
+          receiptNumber: payment.receipt_number,
+          nationalMembership: payment.national_membership,
+          nationalReceiptNumber: payment.national_receipt_number,
+          academicYear: payment.academic_year,
+          semester: payment.semester,
+          createdAt: payment.created_at,
+          name: `${payment.last_name || ''}, ${payment.first_name || ''} ${payment.middle_initial || ''}`.trim(),
+          program: payment.program || '-',
+          yearLevel: payment.year_level || '-',
+        }));
+    } catch (error) {
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { getAllMembershipPayments: getLocal } = await import('./database');
+  return getLocal(academicYear, semester);
+}
+
 // ===== EXCUSES =====
 
 export async function addExcuse(excuse) {

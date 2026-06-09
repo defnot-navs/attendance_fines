@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -12,8 +13,86 @@ const ATTENDANCE_LOG_LIMIT = Math.min(
   Math.max(1, Number(process.env.ATTENDANCE_LOG_LIMIT || 5000) || 5000)
 );
 
-app.use(cors());
+const defaultAllowedOrigins = [
+  'https://attendancefinesvercel.vercel.app',
+  'https://attendance-fines.vercel.app',
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
+];
+
+const allowedOrigins = (
+  process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((value) => value.trim()).filter(Boolean)
+    : defaultAllowedOrigins
+);
+
+const corsOptions = {
+  origin(origin, callback) {
+    // Allow server-to-server tools and non-browser clients without Origin header.
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false,
+  optionsSuccessStatus: 204,
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
+
+const mailFrom = process.env.MAIL_FROM || process.env.SMTP_USER || '';
+const mailTransport = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    })
+  : null;
+
+async function sendMembershipConfirmationEmail(student, membership) {
+  if (!mailTransport || !mailFrom || !student?.email) {
+    return { skipped: true };
+  }
+
+  const fullName = [student.last_name, student.first_name, student.middle_initial]
+    .filter(Boolean)
+    .join(', ');
+
+  const subject = 'JPCS-CCC Membership Registration Confirmation';
+  const text = [
+    `Hello ${fullName || student.student_id},`,
+    '',
+    'Your JPCS-CCC membership registration has been recorded successfully.',
+    `Student ID: ${student.student_id}`,
+    `Academic Year: ${membership.academic_year}`,
+    `Semester: ${membership.semester}`,
+    `Status: ${membership.paid ? 'Paid' : 'Unpaid'}`,
+    membership.payment_method ? `Payment Method: ${membership.payment_method}` : null,
+    membership.receipt_number ? `Receipt Number: ${membership.receipt_number}` : null,
+    membership.national_membership ? 'National Membership: Yes' : 'National Membership: No',
+    membership.national_receipt_number ? `National Receipt Number: ${membership.national_receipt_number}` : null,
+    '',
+    'Thank you for registering with JPCS-CCC.',
+  ].filter(Boolean).join('\n');
+
+  await mailTransport.sendMail({
+    from: mailFrom,
+    to: student.email,
+    subject,
+    text,
+  });
+
+  return { skipped: false };
+}
 
 let dbReady = false;
 
@@ -797,6 +876,51 @@ app.post('/api/membership/initialize', async (req, res) => {
   }
 });
 
+app.post('/api/membership/save', async (req, res) => {
+  const {
+    studentId,
+    amount,
+    paid,
+    paidAt,
+    paymentMethod,
+    receiptNumber,
+    nationalMembership,
+    nationalReceiptNumber,
+    academicYear,
+    semester,
+  } = req.body;
+
+  if (!studentId) {
+    return res.status(400).json({ error: 'studentId is required' });
+  }
+
+  try {
+    await MembershipPayment.updateOne(
+      { student_id: studentId },
+      {
+        $set: {
+          student_id: studentId,
+          amount: Number(amount),
+          paid: Boolean(paid),
+          paid_at: paidAt || null,
+          payment_method: paymentMethod || null,
+          receipt_number: receiptNumber || null,
+          national_membership: Boolean(nationalMembership),
+          national_receipt_number: nationalReceiptNumber || null,
+          academic_year: academicYear,
+          semester,
+        },
+        $setOnInsert: { created_at: new Date() },
+      },
+      { upsert: true }
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/membership', async (req, res) => {
   try {
     const [payments, students] = await Promise.all([
@@ -823,6 +947,7 @@ app.put('/api/membership/:id/pay', async (req, res) => {
   const { paymentMethod, receiptNumber, nationalMembership, nationalReceiptNumber } = req.body;
 
   try {
+    const membership = await MembershipPayment.findById(req.params.id).lean();
     await MembershipPayment.findByIdAndUpdate(req.params.id, {
       $set: {
         paid: true,
@@ -834,6 +959,79 @@ app.put('/api/membership/:id/pay', async (req, res) => {
       },
     });
 
+    if (membership) {
+      const student = await Student.findOne({ student_id: membership.student_id }).lean();
+      if (student) {
+        await sendMembershipConfirmationEmail(student, {
+          ...membership,
+          paid: true,
+          payment_method: paymentMethod,
+          receipt_number: receiptNumber,
+          national_membership: nationalMembership,
+          national_receipt_number: nationalReceiptNumber,
+        });
+      }
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/membership/:id/unpay', async (req, res) => {
+  const membership = await MembershipPayment.findById(req.params.id).lean();
+
+  try {
+    if (membership) {
+      await MembershipPayment.findByIdAndUpdate(req.params.id, {
+        $set: {
+          paid: false,
+          paid_at: null,
+          payment_method: null,
+          receipt_number: null,
+          national_membership: false,
+          national_receipt_number: null,
+        },
+      });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/membership/:id', async (req, res) => {
+  try {
+    await MembershipPayment.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/membership/send-confirmation', async (req, res) => {
+  const { studentId, academicYear, semester } = req.body;
+
+  if (!studentId) {
+    return res.status(400).json({ error: 'studentId is required' });
+  }
+
+  try {
+    const [student, membership] = await Promise.all([
+      Student.findOne({ student_id: studentId }).lean(),
+      MembershipPayment.findOne({ student_id: studentId, academic_year: academicYear, semester }).lean(),
+    ]);
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+    if (!membership) {
+      return res.status(404).json({ error: 'Membership record not found' });
+    }
+
+    await sendMembershipConfirmationEmail(student, membership);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });

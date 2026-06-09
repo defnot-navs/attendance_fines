@@ -7,8 +7,11 @@ import {
   markMembershipAsUnpaid,
   clearAllMembershipPayments,
   db,
-  addStudent
+  addStudent,
+  saveMembershipPayment,
+  deleteMembershipPayment
 } from '../db/hybridDatabase';
+import apiClient from '../services/apiClient';
 import { formatCurrency } from '../utils/finesCalculator';
 import DataTable from './common/DataTable';
 
@@ -136,7 +139,7 @@ export default function MembershipRegistration() {
       });
 
       // Create membership payment record as PAID
-      await db.membershipPayments.add({
+      await saveMembershipPayment({
         studentId: newMemberForm.studentId,
         amount: membershipAmount,
         paid: true,
@@ -150,6 +153,15 @@ export default function MembershipRegistration() {
         createdAt: new Date().toISOString(),
         synced: false
       });
+
+      if (newMemberForm.email) {
+        await apiClient.sendMembershipConfirmation({
+          studentId: newMemberForm.studentId,
+          email: newMemberForm.email,
+          academicYear,
+          semester,
+        });
+      }
 
       setResult({
         success: true,
@@ -212,6 +224,15 @@ export default function MembershipRegistration() {
         paymentForm.nationalMembership,
         paymentForm.nationalReceiptNumber
       );
+
+      if (paymentForm.email) {
+        await apiClient.sendMembershipConfirmation({
+          studentId: selectedPayment.studentId,
+          email: paymentForm.email,
+          academicYear,
+          semester,
+        });
+      }
       
       setResult({
         success: true,
@@ -263,7 +284,7 @@ export default function MembershipRegistration() {
     }
 
     try {
-      await db.membershipPayments.delete(payment.id);
+      await deleteMembershipPayment(payment.id);
       setResult({
         success: true,
         message: `Deleted membership payment record for ${payment.name}`
@@ -282,7 +303,7 @@ export default function MembershipRegistration() {
     const confirmText = 'DELETE ALL';
     const userInput = prompt(
       `⚠️ WARNING: Remove ALL membership payment records?\n\n` +
-      `This will delete ${payments.length} payment record(s) for ${academicYear} ${semester}.\n\n` +
+      `This will delete ALL ${payments.length} membership payment record(s) from this device/browser.\n\n` +
       `This action CANNOT be undone!\n\n` +
       `Type "${confirmText}" to confirm:`
     );
@@ -299,18 +320,11 @@ export default function MembershipRegistration() {
     }
 
     try {
-      // Filter and delete only current academic year/semester
-      const paymentsToDelete = await db.membershipPayments
-        .filter(p => p.academicYear === academicYear && p.semester === semester)
-        .toArray();
-      
-      for (const payment of paymentsToDelete) {
-        await db.membershipPayments.delete(payment.id);
-      }
+      const paymentsToDelete = await clearAllMembershipPayments();
 
       setResult({
         success: true,
-        message: `Successfully removed ${paymentsToDelete.length} membership payment record(s)`
+        message: `Successfully removed ${paymentsToDelete} membership payment record(s)`
       });
       
       await loadPayments();
@@ -351,7 +365,7 @@ export default function MembershipRegistration() {
 
       if (!payment) {
         // Create new payment record
-        await db.membershipPayments.add({
+        await saveMembershipPayment({
           studentId: manualPaymentForm.studentId,
           amount: membershipAmount,
           paid: true,
@@ -374,6 +388,15 @@ export default function MembershipRegistration() {
           manualPaymentForm.nationalMembership,
           manualPaymentForm.nationalReceiptNumber
         );
+      }
+
+      if (manualPaymentForm.email || student.email) {
+        await apiClient.sendMembershipConfirmation({
+          studentId: manualPaymentForm.studentId,
+          email: manualPaymentForm.email || student.email,
+          academicYear,
+          semester,
+        });
       }
 
       setResult({

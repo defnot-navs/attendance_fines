@@ -1,6 +1,12 @@
 // Centralized API client for backend communication
 // Default to same-origin /api so it works with the Vite dev proxy (and avoids HTTPS→HTTP mixed-content issues).
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim();
+const runningOnVercel =
+  typeof window !== 'undefined' &&
+  typeof window.location?.hostname === 'string' &&
+  window.location.hostname.endsWith('vercel.app');
+const shouldUseProxy = runningOnVercel && configuredApiUrl?.includes('onrender.com');
+const API_BASE_URL = shouldUseProxy ? '/api' : configuredApiUrl || '/api';
 
 class APIClient {
   constructor() {
@@ -257,6 +263,13 @@ class APIClient {
     });
   }
 
+  async saveMembershipPayment(data) {
+    return this.request('/membership/save', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   async getAllMembershipPayments() {
     return this.request('/membership');
   }
@@ -268,9 +281,28 @@ class APIClient {
     });
   }
 
+  async markMembershipAsUnpaid(id) {
+    return this.request(`/membership/${id}/unpay`, {
+      method: 'PUT',
+    });
+  }
+
+  async deleteMembershipPayment(id) {
+    return this.request(`/membership/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
   async clearAllMembershipPayments() {
     return this.request('/membership', {
       method: 'DELETE',
+    });
+  }
+
+  async sendMembershipConfirmation(data) {
+    return this.request('/membership/send-confirmation', {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 

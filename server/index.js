@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import mysql from 'mysql2/promise';
 import dotenv from 'dotenv';
+import nodemailer from 'nodemailer';
 
 dotenv.config();
 
@@ -26,6 +27,55 @@ const dbConfig = {
   connectionLimit: 10,
   queueLimit: 0
 };
+
+const mailFrom = process.env.MAIL_FROM || process.env.SMTP_USER || '';
+const mailTransport = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: Number(process.env.SMTP_PORT || 587),
+      secure: String(process.env.SMTP_SECURE || 'false').toLowerCase() === 'true',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    })
+  : null;
+
+async function sendMembershipConfirmationEmail(student, membership) {
+  if (!mailTransport || !mailFrom || !student?.email) {
+    return { skipped: true };
+  }
+
+  const fullName = [student.last_name, student.first_name, student.middle_initial]
+    .filter(Boolean)
+    .join(', ');
+
+  const subject = 'JPCS-CCC Membership Registration Confirmation';
+  const text = [
+    `Hello ${fullName || student.student_id},`,
+    '',
+    'Your JPCS-CCC membership registration has been recorded successfully.',
+    `Student ID: ${student.student_id}`,
+    `Academic Year: ${membership.academic_year}`,
+    `Semester: ${membership.semester}`,
+    `Status: ${membership.paid ? 'Paid' : 'Unpaid'}`,
+    membership.payment_method ? `Payment Method: ${membership.payment_method}` : null,
+    membership.receipt_number ? `Receipt Number: ${membership.receipt_number}` : null,
+    membership.national_membership ? 'National Membership: Yes' : 'National Membership: No',
+    membership.national_receipt_number ? `National Receipt Number: ${membership.national_receipt_number}` : null,
+    '',
+    'Thank you for registering with JPCS-CCC.',
+  ].filter(Boolean).join('\n');
+
+  await mailTransport.sendMail({
+    from: mailFrom,
+    to: student.email,
+    subject,
+    text,
+  });
+
+  return { skipped: false };
+}
 
 // Create connection pool
 let pool;
@@ -781,6 +831,63 @@ app.post('/api/membership/initialize', async (req, res) => {
   }
 });
 
+// Save or update a membership payment record
+app.post('/api/membership/save', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+  const {
+    studentId,
+    amount,
+    paid,
+    paidAt,
+    paymentMethod,
+    receiptNumber,
+    nationalMembership,
+    nationalReceiptNumber,
+    academicYear,
+    semester,
+  } = req.body;
+
+  if (!studentId) {
+    return res.status(400).json({ error: 'studentId is required' });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO membership_payments (
+        student_id, amount, paid, paid_at, payment_method, receipt_number,
+        national_membership, national_receipt_number, academic_year, semester
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        amount = VALUES(amount),
+        paid = VALUES(paid),
+        paid_at = VALUES(paid_at),
+        payment_method = VALUES(payment_method),
+        receipt_number = VALUES(receipt_number),
+        national_membership = VALUES(national_membership),
+        national_receipt_number = VALUES(national_receipt_number),
+        academic_year = VALUES(academic_year),
+        semester = VALUES(semester)` ,
+      [
+        studentId,
+        amount,
+        Boolean(paid),
+        paidAt || null,
+        paymentMethod || null,
+        receiptNumber || null,
+        Boolean(nationalMembership),
+        nationalReceiptNumber || null,
+        academicYear,
+        semester,
+      ]
+    );
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get all membership payments
 app.get('/api/membership', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'Database not available' });
@@ -805,10 +912,94 @@ app.put('/api/membership/:id/pay', async (req, res) => {
   const { paymentMethod, receiptNumber, nationalMembership, nationalReceiptNumber } = req.body;
 
   try {
+    const [existingRows] = await pool.query(
+      'SELECT m.*, s.email, s.last_name, s.first_name, s.middle_initial FROM membership_payments m JOIN students s ON m.student_id = s.student_id WHERE m.id = ?',
+      [req.params.id]
+    );
+    const membership = existingRows[0];
+
     await pool.query(
       'UPDATE membership_payments SET paid = TRUE, paid_at = NOW(), payment_method = ?, receipt_number = ?, national_membership = ?, national_receipt_number = ? WHERE id = ?',
       [paymentMethod, receiptNumber, nationalMembership, nationalReceiptNumber, req.params.id]
     );
+
+    if (membership) {
+      await sendMembershipConfirmationEmail(
+        {
+          student_id: membership.student_id,
+          email: membership.email,
+          last_name: membership.last_name,
+          first_name: membership.first_name,
+          middle_initial: membership.middle_initial,
+        },
+        {
+          ...membership,
+          paid: true,
+          payment_method: paymentMethod,
+          receipt_number: receiptNumber,
+          national_membership: nationalMembership,
+          national_receipt_number: nationalReceiptNumber,
+        }
+      );
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/membership/:id/unpay', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+  try {
+    await pool.query(
+      'UPDATE membership_payments SET paid = FALSE, paid_at = NULL, payment_method = NULL, receipt_number = NULL, national_membership = FALSE, national_receipt_number = NULL WHERE id = ?',
+      [req.params.id]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete('/api/membership/:id', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+  try {
+    await pool.query('DELETE FROM membership_payments WHERE id = ?', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/membership/send-confirmation', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database not available' });
+
+  const { studentId, academicYear, semester } = req.body;
+
+  if (!studentId) {
+    return res.status(400).json({ error: 'studentId is required' });
+  }
+
+  try {
+    const [studentRows] = await pool.query('SELECT * FROM students WHERE student_id = ?', [studentId]);
+    const student = studentRows[0];
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    const [membershipRows] = await pool.query(
+      'SELECT * FROM membership_payments WHERE student_id = ? AND academic_year = ? AND semester = ? LIMIT 1',
+      [studentId, academicYear, semester]
+    );
+    const membership = membershipRows[0];
+    if (!membership) {
+      return res.status(404).json({ error: 'Membership record not found' });
+    }
+
+    await sendMembershipConfirmationEmail(student, membership);
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
