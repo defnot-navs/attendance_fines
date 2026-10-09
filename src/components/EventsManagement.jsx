@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Trash2, CheckCircle, XCircle, UserX } from 'lucide-react';
 import { addEvent, getAllEvents, deleteEvent, markRemainingStudentsAbsent } from '../db/hybridDatabase';
 import { formatTime12Hour } from '../utils/timeFormatter';
+import PageHeading from './common/PageHeading';
 
 export default function EventsManagement({ onEventSelect }) {
   const [events, setEvents] = useState([]);
@@ -145,10 +146,7 @@ export default function EventsManagement({ onEventSelect }) {
   return (
     <div className="bg-white rounded-lg shadow p-4 sm:p-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-          <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />
-          Events Management
-        </h2>
+        <PageHeading icon={Calendar} title="Events Management" />
         <button
           onClick={() => setShowForm(!showForm)}
           className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 w-full sm:w-auto justify-center text-sm sm:text-base"

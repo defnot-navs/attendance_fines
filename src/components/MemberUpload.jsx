@@ -3,6 +3,7 @@ import { Upload, CheckCircle, XCircle, AlertTriangle, RefreshCw } from 'lucide-r
 import { Link } from 'react-router-dom';
 import { processStudentFile } from '../utils/fileParser';
 import { addStudent } from '../db/hybridDatabase';
+import PageHeading from './common/PageHeading';
 
 export default function MemberUpload() {
   const [uploading, setUploading] = useState(false);
@@ -120,10 +121,7 @@ export default function MemberUpload() {
 
   return (
     <div className="bg-white rounded-lg shadow p-3 sm:p-6">
-      <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6 flex items-center gap-2">
-        <Upload className="w-5 h-5 sm:w-6 sm:h-6" />
-        Upload Member List
-      </h2>
+      <PageHeading icon={Upload} title="Upload Member List" />
 
       {/* Manual Entry Form */}
       <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">

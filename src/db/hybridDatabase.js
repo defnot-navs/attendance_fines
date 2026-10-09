@@ -151,47 +151,52 @@ export async function deleteStudent(student) {
   await checkBackendAvailability();
 
   const { id, studentId } = student || {};
+  const { db: localDb } = await import('./database');
+
+  const removeLocal = async () => {
+    if (id) await localDb.students.delete(id);
+    if (studentId) {
+      await localDb.students.where('studentId').equals(studentId).delete();
+      await Promise.all([
+        localDb.attendance.where('studentId').equals(studentId).delete(),
+        localDb.fines.where('studentId').equals(studentId).delete(),
+        localDb.excuses.where('studentId').equals(studentId).delete(),
+      ]);
+    }
+  };
 
   if (backendAvailable) {
     try {
-      // If backend expects internal id, prefer id, otherwise pass studentId
-      if (id) {
-        await apiClient.deleteStudent(id);
-      } else if (studentId) {
-        // Try to fetch server-side id by studentId then delete
-        const server = await apiClient.getStudentByStudentId(studentId);
-        if (server && server.id) await apiClient.deleteStudent(server.id);
-      }
-
-      // Also remove any local copies and related records
-      const { db: localDb } = await import('./database');
-      if (id) await localDb.students.delete(id);
-      else if (studentId) await localDb.students.where('studentId').equals(studentId).delete();
-
+      let serverId = id;
       if (studentId) {
-        await Promise.all([
-          localDb.attendance.where('studentId').equals(studentId).delete(),
-          localDb.fines.where('studentId').equals(studentId).delete(),
-          localDb.excuses.where('studentId').equals(studentId).delete(),
-        ]);
+        // Local IndexedDB ids differ from server ids, so resolve via studentId when possible.
+        try {
+          const server = await apiClient.getStudentByStudentId(studentId);
+          if (server?.id) serverId = server.id;
+        } catch (lookupError) {
+          if (lookupError.status !== 404) throw lookupError;
+          serverId = null; // not on the server, only local cleanup needed
+        }
+      }
+      if (serverId) {
+        try {
+          await apiClient.deleteStudent(serverId);
+        } catch (deleteError) {
+          if (deleteError.status !== 404) throw deleteError;
+        }
       }
 
+      await removeLocal();
       return { success: true };
     } catch (error) {
-      console.error('❌ Backend delete failed, falling back to IndexedDB:', error);
+      // HTTP errors mean the server is reachable: surface them, don't disable the backend.
+      if (error.status) throw error;
+      console.error('❌ Backend delete failed (network), falling back to IndexedDB:', error);
       backendAvailable = false;
-      // fallthrough to local deletion
     }
   }
 
-  // Fallback to IndexedDB only
-  const { db: localDb } = await import('./database');
-  if (id) {
-    await localDb.students.delete(id);
-  } else if (studentId) {
-    await localDb.students.where('studentId').equals(studentId).delete();
-  }
-
+  await removeLocal();
   return { success: true };
 }
 

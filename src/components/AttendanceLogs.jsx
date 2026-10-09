@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Trash2, ArrowUp } from 'lucide-react';
 import { getAllAttendance, getAllStudents, getAllEvents, deleteAttendance, clearAllAttendance } from '../db/hybridDatabase';
 import DataTable from './common/DataTable';
+import PageHeading from './common/PageHeading';
 
 export default function AttendanceLogs() {
   const [logs, setLogs] = useState([]);
@@ -247,10 +248,7 @@ export default function AttendanceLogs() {
   return (
     <div className="bg-white rounded-lg shadow p-4 sm:p-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-          <Calendar className="w-5 h-5 sm:w-6 sm:h-6" />
-          Attendance Logs
-        </h2>
+        <PageHeading icon={Calendar} title="Attendance Logs" />
         <div className="flex gap-2 w-full sm:w-auto">
           <button
             onClick={handleRemoveAll}

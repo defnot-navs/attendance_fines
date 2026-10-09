@@ -4,6 +4,8 @@ import { processOnlineMeetingAttendance, parseName, matchStudent } from '../util
 import { getAllStudents, recordAttendance, addEvent } from '../db/hybridDatabase';
 import { autoGenerateFines } from '../utils/finesCalculator';
 import { parseCSV, parseExcel } from '../utils/fileParser';
+import { notify } from '../utils/toast';
+import PageHeading from './common/PageHeading';
 
 export default function OnlineMeetingParser() {
   const sessionOptions = [
@@ -131,7 +133,7 @@ export default function OnlineMeetingParser() {
         setAttendeeText((sessionData[previewSession] || []).join('\n'));
         setResult(null);
 
-        alert(
+        notify(
           `Imported session columns successfully. Detected sessions: ${autoSelectedSessions.join(', ') || 'none'}. ` +
           'Processing will now use each session column automatically.'
         );
@@ -143,7 +145,7 @@ export default function OnlineMeetingParser() {
         .filter((name) => name && !likelyNameHeaders.includes(name.toLowerCase()));
 
       if (names.length === 0) {
-        alert('No attendee names found in file. Please use a column with attendee names.');
+        notify('No attendee names found in file. Please use a column with attendee names.');
         return;
       }
 
@@ -151,7 +153,7 @@ export default function OnlineMeetingParser() {
   setImportedSessionAttendees(null);
       setResult(null);
     } catch (error) {
-      alert(`Failed to import file: ${error.message}`);
+      notify(`Failed to import file: ${error.message}`);
     } finally {
       // Allow selecting the same file again if needed.
       event.target.value = '';
@@ -176,24 +178,24 @@ export default function OnlineMeetingParser() {
       Object.values(importedSessionAttendees).some((sessionNames) => Array.isArray(sessionNames) && sessionNames.length > 0);
 
     if (!attendeeText.trim() && !hasSessionImportData) {
-      alert('Please enter attendee list');
+      notify('Please enter attendee list');
       return;
     }
 
     if (!eventTitle.trim()) {
-      alert('Please enter event title');
+      notify('Please enter event title');
       return;
     }
 
     if (selectedSessions.length === 0) {
-      alert('Please select at least one attendance session');
+      notify('Please select at least one attendance session');
       return;
     }
 
     if (fineAmount !== '') {
       const parsedFine = Number(fineAmount);
       if (!Number.isFinite(parsedFine) || parsedFine < 0) {
-        alert('Please enter a valid fine amount (0 or higher)');
+        notify('Please enter a valid fine amount (0 or higher)');
         return;
       }
     }
@@ -206,7 +208,7 @@ export default function OnlineMeetingParser() {
       let students = await getAllStudents();
 
       if (students.length === 0) {
-        alert('No students in database. Please upload member list first.');
+        notify('No students in database. Please upload member list first.');
         setProcessing(false);
         return;
       }
@@ -215,7 +217,7 @@ export default function OnlineMeetingParser() {
       if (yearLevel !== 'all') {
         students = students.filter(s => s.yearLevel === parseInt(yearLevel));
         if (students.length === 0) {
-          alert(`No students found for ${yearLevel}${yearLevel === '1' ? 'st' : yearLevel === '2' ? 'nd' : yearLevel === '3' ? 'rd' : 'th'} year.`);
+          notify(`No students found for ${yearLevel}${yearLevel === '1' ? 'st' : yearLevel === '2' ? 'nd' : yearLevel === '3' ? 'rd' : 'th'} year.`);
           setProcessing(false);
           return;
         }
@@ -369,7 +371,7 @@ export default function OnlineMeetingParser() {
         });
       }
     } catch (error) {
-      alert('Error processing attendance: ' + error.message);
+      notify('Error processing attendance: ' + error.message);
     } finally {
       setProcessing(false);
     }
@@ -387,10 +389,7 @@ export default function OnlineMeetingParser() {
 
   return (
     <div className="bg-white rounded-lg shadow p-6">
-      <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
-        <Users className="w-6 h-6" />
-        Online Meeting Attendance
-      </h2>
+      <PageHeading icon={Users} title="Online Meeting Attendance" />
 
       {/* Event Title Input */}
       <div className="mb-4">

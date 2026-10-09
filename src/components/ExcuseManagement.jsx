@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { FileText, Upload, Trash2, CheckCircle, XCircle, Calendar, Clock, ArrowUp } from 'lucide-react';
+import { FileText, Upload, Trash2, CheckCircle, XCircle, Calendar, Clock, ArrowUp, Search, Paperclip, ShieldCheck, Layers } from 'lucide-react';
 import { addExcuse, getAllExcuses, deleteExcuse, clearAllExcuses, getAllStudents, getAllEvents, markAttendanceAsExcused, db } from '../db/hybridDatabase';
 import { formatTime12Hour } from '../utils/timeFormatter';
 
 export default function ExcuseManagement() {
   const [excuses, setExcuses] = useState([]);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('All');
   const [students, setStudents] = useState([]);
   const [events, setEvents] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -207,46 +209,88 @@ export default function ExcuseManagement() {
     return student ? `${student.firstName} ${student.lastName}` : studentId;
   };
 
+  const TYPE_STYLES = {
+    COE: 'bg-blue-100 text-blue-800 ring-blue-200',
+    OJT: 'bg-purple-100 text-purple-800 ring-purple-200',
+    Medical: 'bg-red-100 text-red-800 ring-red-200',
+  };
+  const typeStyle = (type) => TYPE_STYLES[type] || 'bg-gray-100 text-gray-800 ring-gray-200';
+
+  const excuseTypes = ['All', ...Array.from(new Set(excuses.map((e) => e.type).filter(Boolean)))];
+  const approvedCount = excuses.filter((e) => e.approved).length;
+  const uniqueStudents = new Set(excuses.map((e) => e.studentId)).size;
+  const filteredExcuses = excuses.filter((e) => {
+    if (typeFilter !== 'All' && e.type !== typeFilter) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      String(e.studentId).toLowerCase().includes(q) ||
+      getStudentName(e.studentId).toLowerCase().includes(q) ||
+      String(e.description || '').toLowerCase().includes(q)
+    );
+  });
+  const initials = (studentId) =>
+    getStudentName(studentId).split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '?';
+
   const scrollToTop = () => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (
     <div className="max-w-6xl mx-auto">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-3">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <FileText className="w-6 h-6 sm:w-8 sm:h-8" />
-            Excuse Management
-          </h2>
-          <p className="text-sm sm:text-base text-gray-600 mt-1">Upload COE, OJT, and other excuse documents</p>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-5 gap-3">
+        <div className="flex items-center gap-3">
+          <div className="p-3 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md">
+            <FileText className="w-6 h-6" />
+          </div>
+          <div>
+            <h2 className="text-xl sm:text-2xl font-bold text-slate-900 tracking-tight">Excuse Management</h2>
+            <p className="text-sm text-slate-500">Upload COE, OJT, and other excuse documents</p>
+          </div>
         </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <button
-            onClick={handleRemoveAll}
-            disabled={excuses.length === 0}
-            className="bg-red-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-red-700 active:bg-red-800 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center gap-2 text-xs sm:text-sm flex-1 sm:flex-initial touch-manipulation"
+            onClick={() => setShowForm(!showForm)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 active:bg-blue-800 flex items-center justify-center gap-2 text-sm font-medium flex-1 sm:flex-initial touch-manipulation transition-colors"
           >
-            <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="hidden sm:inline">Remove All</span>
-            <span className="sm:hidden">Remove</span>
+            <Upload className="w-4 h-4" />
+            {showForm ? 'Cancel' : 'Upload Excuse'}
           </button>
           <button
             onClick={() => setShowManualExcuse(!showManualExcuse)}
-            className="bg-yellow-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-yellow-700 active:bg-yellow-800 flex items-center justify-center gap-2 text-xs sm:text-sm flex-1 sm:flex-initial touch-manipulation"
+            className="bg-amber-500 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-amber-600 active:bg-amber-700 flex items-center justify-center gap-2 text-sm font-medium flex-1 sm:flex-initial touch-manipulation transition-colors"
           >
-            <CheckCircle className="w-4 h-4 sm:w-5 sm:h-5" />
-            <span className="hidden sm:inline">Manual Excuse</span>
-            <span className="sm:hidden">Manual</span>
+            <CheckCircle className="w-4 h-4" />
+            Manual Excuse
           </button>
           <button
-            onClick={() => setShowForm(!showForm)}
-            className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 active:bg-blue-800 flex items-center justify-center gap-2 text-xs sm:text-sm w-full sm:w-auto touch-manipulation"
+            onClick={handleRemoveAll}
+            disabled={excuses.length === 0}
+            className="bg-white text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-50 active:bg-red-100 disabled:text-slate-400 disabled:border-slate-200 disabled:bg-slate-50 flex items-center justify-center gap-2 text-sm font-medium flex-1 sm:flex-initial touch-manipulation transition-colors"
           >
-            <Upload className="w-4 h-4 sm:w-5 sm:h-5" />
-            {showForm ? 'Cancel' : 'Upload Excuse'}
+            <Trash2 className="w-4 h-4" />
+            Remove All
           </button>
         </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+        {[
+          { label: 'Total excuses', value: excuses.length, Icon: Layers, tone: 'bg-blue-50 text-blue-600' },
+          { label: 'Approved', value: approvedCount, Icon: ShieldCheck, tone: 'bg-emerald-50 text-emerald-600' },
+          { label: 'Students covered', value: uniqueStudents, Icon: FileText, tone: 'bg-purple-50 text-purple-600' },
+        ].map(({ label, value, Icon, tone }) => (
+          <div key={label} className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex items-center gap-3">
+            <div className={`p-2.5 rounded-lg ${tone}`}>
+              <Icon className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-slate-900 leading-none">{value}</p>
+              <p className="text-xs text-slate-500 mt-1">{label}</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Result/Error Messages */}
@@ -469,69 +513,124 @@ export default function ExcuseManagement() {
 
       {/* Excuses List */}
       <div className="space-y-3">
-        <h3 className="font-semibold text-gray-900">All Excuses ({excuses.length})</h3>
-        
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <h3 className="font-semibold text-slate-900">
+            All Excuses <span className="text-slate-400 font-normal">({filteredExcuses.length}{filteredExcuses.length !== excuses.length ? ` of ${excuses.length}` : ''})</span>
+          </h3>
+          {excuses.length > 0 && (
+            <div className="flex flex-col sm:flex-row gap-2">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search name, ID or notes"
+                  className="w-full sm:w-64 pl-9 pr-3 py-2 border border-slate-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex gap-1 overflow-x-auto scrollbar-hide">
+                {excuseTypes.map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setTypeFilter(t)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap border transition-colors ${
+                      typeFilter === t
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : 'bg-white border-slate-300 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         {excuses.length === 0 ? (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-            <FileText className="w-12 h-12 text-gray-400 mx-auto mb-3" />
-            <p className="text-gray-600">No excuses uploaded yet</p>
-            <p className="text-sm text-gray-500 mt-1">Click "Upload Excuse" to add COE, OJT, or other excuse documents</p>
+          <div className="bg-white border-2 border-dashed border-slate-300 rounded-2xl p-10 text-center">
+            <div className="w-16 h-16 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-8 h-8" />
+            </div>
+            <p className="text-lg font-semibold text-slate-800">No excuses uploaded yet</p>
+            <p className="text-sm text-slate-500 mt-1 max-w-md mx-auto">
+              Add COE, OJT, medical or other excuse documents so absences are excused automatically.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center mt-5">
+              <button
+                onClick={() => setShowForm(true)}
+                className="inline-flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700"
+              >
+                <Upload className="w-4 h-4" /> Upload Excuse
+              </button>
+              <button
+                onClick={() => setShowManualExcuse(true)}
+                className="inline-flex items-center justify-center gap-2 bg-white border border-slate-300 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium hover:bg-slate-50"
+              >
+                <CheckCircle className="w-4 h-4" /> Mark manually
+              </button>
+            </div>
+          </div>
+        ) : filteredExcuses.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-xl p-8 text-center text-slate-500 text-sm">
+            No excuses match your search.{' '}
+            <button className="text-blue-600 hover:underline" onClick={() => { setSearch(''); setTypeFilter('All'); }}>
+              Clear filters
+            </button>
           </div>
         ) : (
-          <div className="space-y-2">
-            {excuses.map((excuse) => (
+          <div className="space-y-3">
+            {filteredExcuses.map((excuse) => (
               <div
                 key={excuse.id}
-                className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50"
+                className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm hover:shadow-md hover:border-slate-300 transition-all"
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className={`px-2 py-1 text-xs font-semibold rounded ${
-                        excuse.type === 'COE' ? 'bg-blue-100 text-blue-800' :
-                        excuse.type === 'OJT' ? 'bg-purple-100 text-purple-800' :
-                        excuse.type === 'Medical' ? 'bg-red-100 text-red-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center text-sm font-semibold shrink-0">
+                    {initials(excuse.studentId)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="font-semibold text-slate-900 truncate">{getStudentName(excuse.studentId)}</h4>
+                      <span className="text-xs text-slate-500">{excuse.studentId}</span>
+                      <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ring-1 ${typeStyle(excuse.type)}`}>
                         {excuse.type}
                       </span>
                       {excuse.approved && (
-                        <span className="px-2 py-1 text-xs font-semibold rounded bg-green-100 text-green-800">
+                        <span className="px-2 py-0.5 text-xs font-semibold rounded-full ring-1 bg-green-100 text-green-800 ring-green-200">
                           Approved
                         </span>
                       )}
                     </div>
-                    <h4 className="font-semibold text-gray-900">
-                      Student: {getStudentName(excuse.studentId)} ({excuse.studentId})
-                    </h4>
-                    <div className="text-sm text-gray-600 mt-2 space-y-1">
-                      <p className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4" />
+                    <div className="text-sm text-slate-600 mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                      <p className="flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-slate-400" />
                         {new Date(excuse.startDate).toLocaleDateString()} - {new Date(excuse.endDate).toLocaleDateString()}
                       </p>
                       {excuse.startTime && excuse.endTime && (
-                        <p className="flex items-center gap-2">
-                          <Clock className="w-4 h-4" />
+                        <p className="flex items-center gap-1.5">
+                          <Clock className="w-4 h-4 text-slate-400" />
                           {formatTime12Hour(excuse.startTime)} - {formatTime12Hour(excuse.endTime)}
                         </p>
                       )}
-                      {excuse.description && (
-                        <p className="text-gray-500 mt-1">{excuse.description}</p>
-                      )}
                       {excuse.fileName && (
-                        <p className="text-blue-600 mt-1">
-                          📎 {excuse.fileName}
+                        <p className="flex items-center gap-1.5 text-blue-600">
+                          <Paperclip className="w-4 h-4" />
+                          {excuse.fileName}
                         </p>
                       )}
-                      <p className="text-xs text-gray-400 mt-2">
-                        Uploaded: {new Date(excuse.uploadedAt).toLocaleString()}
-                      </p>
                     </div>
+                    {excuse.description && <p className="text-sm text-slate-500 mt-2">{excuse.description}</p>}
+                    <p className="text-xs text-slate-400 mt-2">
+                      Uploaded {new Date(excuse.uploadedAt).toLocaleString()}
+                    </p>
                   </div>
                   <button
                     onClick={() => handleDelete(excuse.id, excuse.studentId)}
-                    className="text-red-600 hover:text-red-700 p-2"
+                    className="text-slate-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-lg transition-colors"
                     title="Delete excuse"
+                    aria-label="Delete excuse"
                   >
                     <Trash2 className="w-5 h-5" />
                   </button>

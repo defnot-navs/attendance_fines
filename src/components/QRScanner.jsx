@@ -5,6 +5,7 @@ import { getStudentByStudentId, recordAttendance, getAllEvents } from '../db/hyb
 import { autoGenerateFines } from '../utils/finesCalculator';
 import { formatTime12Hour } from '../utils/timeFormatter';
 import { CheckCircle, XCircle, Camera, Upload, Calendar, Smartphone, Copy } from 'lucide-react';
+import PageHeading from './common/PageHeading';
 
 export default function QRScanner({ selectedEventId }) {
   const [scanner, setScanner] = useState(null);
@@ -439,10 +440,7 @@ export default function QRScanner({ selectedEventId }) {
       )}
       
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
-        <h2 className="text-lg sm:text-2xl font-bold flex items-center gap-2">
-          <Camera className="w-5 h-5 sm:w-6 sm:h-6" />
-          QR Code Scanner
-        </h2>
+        <PageHeading icon={Camera} title="QR Code Scanner" />
         {!isScanning ? (
           <button
             onClick={startScanning}

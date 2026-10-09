@@ -7,19 +7,19 @@ export default function QRScannerPage() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b sticky top-0 z-10">
+      <header className="bg-[#0b1a3a] text-white shadow-md sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 py-3 sm:py-4">
           <div className="flex items-center gap-3">
             <Link 
               to="/admin" 
-              className="p-2 hover:bg-gray-100 rounded-lg touch-manipulation"
+              className="p-2 hover:bg-white/20 rounded-lg touch-manipulation"
               title="Back to Admin"
             >
-              <ArrowLeft className="w-5 h-5 text-gray-600" />
+              <ArrowLeft className="w-5 h-5 text-white" />
             </Link>
             <div>
-              <h1 className="text-lg sm:text-xl font-bold text-gray-900">QR Code Scanner</h1>
-              <p className="text-xs sm:text-sm text-gray-600">Scan attendance QR codes</p>
+              <h1 className="text-lg sm:text-xl font-bold">QR Code Scanner</h1>
+              <p className="text-xs sm:text-sm text-blue-100">Scan attendance QR codes</p>
             </div>
           </div>
         </div>

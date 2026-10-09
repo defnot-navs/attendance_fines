@@ -4,6 +4,8 @@ import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFin
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 import DataTable from './common/DataTable';
+import { notify } from '../utils/toast';
+import PageHeading from './common/PageHeading';
 
 const NO_EVENT_KEY = '__NO_EVENT__';
 
@@ -213,7 +215,7 @@ export default function FinesSummary() {
 
   const handleExport = () => {
     if (summary.length === 0) {
-      alert('No data to export');
+      notify('No data to export');
       return;
     }
 
@@ -259,7 +261,7 @@ export default function FinesSummary() {
   const handleExportStatsDetails = () => {
     const rows = getStatsDetailRows(statsDetails.type);
     if (rows.length === 0) {
-      alert('No student records to export for this category.');
+      notify('No student records to export for this category.');
       return;
     }
 
@@ -356,7 +358,7 @@ export default function FinesSummary() {
         });
       }
     } else if (userInput !== null) {
-      alert('Deletion cancelled. You must type "DELETE ALL" exactly to confirm.');
+      notify('Deletion cancelled. You must type "DELETE ALL" exactly to confirm.');
     }
   };
 
@@ -408,7 +410,7 @@ export default function FinesSummary() {
 
     const nextAmount = Number(nextAmountInput);
     if (!Number.isFinite(nextAmount) || nextAmount < 0) {
-      alert('Invalid fine amount.');
+      notify('Invalid fine amount.');
       return;
     }
 
@@ -1130,10 +1132,7 @@ export default function FinesSummary() {
   return (
     <div className="bg-white rounded-lg shadow p-3 sm:p-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-3">
-        <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-          <DollarSign className="w-5 h-5 sm:w-6 sm:h-6" />
-          Fines Summary
-        </h2>
+        <PageHeading icon={DollarSign} title="Fines Summary" />
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <button
             onClick={loadData}

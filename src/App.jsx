@@ -4,6 +4,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import StudentView from './pages/StudentView';
 import QRScannerPage from './pages/QRScannerPage';
 import { initializeFineRules } from './db/database';
+import ToastHost from './components/ToastHost';
 import { setupAutoSync } from './utils/syncManager';
 
 function App() {
@@ -19,6 +20,7 @@ function App() {
 
   return (
     <BrowserRouter>
+      <ToastHost />
       <Routes>
         <Route path="/" element={<Navigate to="/admin" replace />} />
         <Route path="/admin" element={<AdminDashboard />} />

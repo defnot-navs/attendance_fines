@@ -58,7 +58,9 @@ class APIClient {
           (data && (data.error || data.message)) ||
           rawText ||
           `API request failed (${response.status})`;
-        throw new Error(message);
+        const apiError = new Error(message);
+        apiError.status = response.status;
+        throw apiError;
       }
 
       return data ?? {};

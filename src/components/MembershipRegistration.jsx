@@ -14,6 +14,7 @@ import {
 import apiClient from '../services/apiClient';
 import { formatCurrency } from '../utils/finesCalculator';
 import DataTable from './common/DataTable';
+import PageHeading from './common/PageHeading';
 
 export default function MembershipRegistration() {
   const [payments, setPayments] = useState([]);
@@ -555,11 +556,7 @@ export default function MembershipRegistration() {
     <div className="max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-6 gap-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
-            <CreditCard className="w-5 h-5 sm:w-6 sm:h-6" />
-            Membership Registration
-          </h2>
-          <p className="text-sm sm:text-base text-gray-600 mt-1">Track membership payment status</p>
+          <PageHeading icon={CreditCard} title="Membership Registration" subtitle="Track membership payment status" />
         </div>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <button

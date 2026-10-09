@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Users, Search, Trash2, Edit2, Save, X, AlertTriangle, ArrowUp } from 'lucide-react';
 import { getAllStudents, deleteAllStudents, deleteStudent, db } from '../db/hybridDatabase';
 import DataTable from './common/DataTable';
+import { notify } from '../utils/toast';
+import PageHeading from './common/PageHeading';
 
 export default function StudentsManagement() {
   const [students, setStudents] = useState([]);
@@ -116,7 +118,7 @@ export default function StudentsManagement() {
         });
       }
     } else if (userInput !== null) {
-      alert('Deletion cancelled. You must type "DELETE ALL" exactly to confirm.');
+      notify('Deletion cancelled. You must type "DELETE ALL" exactly to confirm.');
     }
   };
 
@@ -273,11 +275,7 @@ export default function StudentsManagement() {
     <div className="max-w-7xl mx-auto">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 sm:mb-6 gap-3">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 flex items-center gap-2">
-            <Users className="w-6 h-6 sm:w-8 sm:h-8" />
-            Students Management
-          </h2>
-          <p className="text-sm sm:text-base text-gray-600 mt-1">View and manage all registered students</p>
+          <PageHeading icon={Users} title="Students Management" subtitle="View and manage all registered students" />
         </div>
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full md:w-auto">
           <div className="text-left sm:text-right">
