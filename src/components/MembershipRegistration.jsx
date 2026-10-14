@@ -27,6 +27,7 @@ export default function MembershipRegistration() {
   const [showManualInputModal, setShowManualInputModal] = useState(false);
   const [showNewMemberModal, setShowNewMemberModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [importMasterlist, setImportMasterlist] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     paymentMethod: 'Cash',
@@ -578,13 +579,22 @@ export default function MembershipRegistration() {
             <span className="sm:hidden">Manual</span>
           </button>
           <button
-            onClick={() => setShowImportModal(true)}
+            onClick={() => { setImportMasterlist(false); setShowImportModal(true); }}
             className="flex items-center justify-center gap-1 sm:gap-2 bg-white text-blue-700 border border-blue-300 px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-50 active:bg-blue-100 text-xs sm:text-sm flex-1 sm:flex-initial touch-manipulation"
             title="Import membership payments from a CSV or Excel file"
           >
             <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5" />
             <span className="hidden sm:inline">Import File</span>
             <span className="sm:hidden">Import</span>
+          </button>
+          <button
+            onClick={() => { setImportMasterlist(true); setShowImportModal(true); }}
+            className="flex items-center justify-center gap-1 sm:gap-2 bg-white text-purple-700 border border-purple-300 px-3 sm:px-4 py-2 rounded-lg hover:bg-purple-50 active:bg-purple-100 text-xs sm:text-sm flex-1 sm:flex-initial touch-manipulation"
+            title="Import the masterlist of members (added as unpaid)"
+          >
+            <Users className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">Import Masterlist</span>
+            <span className="sm:hidden">Masterlist</span>
           </button>
           <button
             onClick={handleInitializePayments}
@@ -994,6 +1004,7 @@ export default function MembershipRegistration() {
           academicYear={academicYear}
           semester={semester}
           membershipAmount={membershipAmount}
+          masterlist={importMasterlist}
           onClose={() => setShowImportModal(false)}
           onDone={loadPayments}
         />

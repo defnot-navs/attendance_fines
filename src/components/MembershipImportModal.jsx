@@ -54,7 +54,7 @@ async function runPool(items, worker, onProgress) {
   return results;
 }
 
-export default function MembershipImportModal({ payments, academicYear, semester, membershipAmount, onClose, onDone }) {
+export default function MembershipImportModal({ payments, academicYear, semester, membershipAmount, masterlist = false, onClose, onDone }) {
   const [fileName, setFileName] = useState('');
   const [parsed, setParsed] = useState(null); // { rows, skipped }
   const [students, setStudents] = useState(null);
@@ -107,7 +107,7 @@ export default function MembershipImportModal({ payments, academicYear, semester
     const paymentByStudent = new Map(payments.map((p) => [String(p.studentId), p]));
 
     const items = parsed.rows.map((row) => {
-      const paid = row.paid === null ? defaultPaid : row.paid;
+      const paid = masterlist ? false : row.paid === null ? defaultPaid : row.paid;
       const knownStudent = students.has(row.studentId);
       const canCreateStudent = !knownStudent && row.lastName && row.firstName;
       const existing = paymentByStudent.get(row.studentId);
@@ -133,7 +133,7 @@ export default function MembershipImportModal({ payments, academicYear, semester
       newStudents: items.filter((i) => i.newStudent && i.action !== 'notFound').length,
       actionable: items.filter((i) => i.action === 'create' || i.action === 'markPaid').length,
     };
-  }, [parsed, students, payments, defaultPaid]);
+  }, [parsed, students, payments, defaultPaid, masterlist]);
 
   const handleImport = async () => {
     if (!plan || plan.actionable === 0) return;
@@ -223,7 +223,7 @@ export default function MembershipImportModal({ payments, academicYear, semester
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-blue-50 text-blue-600"><FileSpreadsheet className="w-5 h-5" /></div>
             <div>
-              <h3 id="import-title" className="font-bold text-slate-900">Import Membership Payments</h3>
+              <h3 id="import-title" className="font-bold text-slate-900">{masterlist ? 'Import Masterlist (Unpaid)' : 'Import Membership Payments'}</h3>
               <p className="text-xs text-slate-500">{academicYear} · {semester} · {formatCurrency(membershipAmount)} default fee</p>
             </div>
           </div>
@@ -337,7 +337,7 @@ export default function MembershipImportModal({ payments, academicYear, semester
                 <p className="text-xs text-slate-500">{parsed.skipped} row(s) without a Student ID were ignored.</p>
               )}
 
-              {!parsed.columns.includes('status') && (
+              {!masterlist && !parsed.columns.includes('status') && (
                 <label className="flex items-center gap-2 text-sm text-slate-700">
                   <input type="checkbox" checked={defaultPaid} onChange={(e) => setDefaultPaid(e.target.checked)} />
                   No Status column found: treat every listed student as <strong>Paid</strong>
