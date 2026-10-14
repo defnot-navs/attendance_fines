@@ -1,7 +1,7 @@
 import { formatEventDate } from '../utils/eventUtils';
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, deleteAttendance, cleanupNoEventRecords, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, deleteAttendance, cleanupNoEventRecords, cleanupWrongYearFines, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 import { exportToExcel } from '../utils/excelExport';
@@ -364,6 +364,40 @@ export default function FinesSummary() {
     const stamp = new Date().toISOString().split('T')[0];
     if (format === 'xlsx') exportToExcel(rows, `${meta.exportPrefix}-${stamp}.xlsx`, meta.title);
     else exportToCSV(rows, `${meta.exportPrefix}-${stamp}.csv`);
+  };
+
+  const handleCleanupWrongYear = async () => {
+    try {
+      const preview = await cleanupWrongYearFines(false);
+      if (preview.fineCount === 0 && preview.attendanceCount === 0) {
+        setResult({ success: true, message: 'No wrong-year fines found. Everything matches the events\' year levels.' });
+        setTimeout(() => setResult(null), 4000);
+        return;
+      }
+      const ok = confirm(
+        `Remove fines for events that were NOT meant for the student's year level?\n\n` +
+        `Unpaid fines: ${preview.fineCount} (₱${preview.totalAmount}) across ${preview.students} student(s)\n` +
+        `Auto-created absences: ${preview.attendanceCount}\n\n` +
+        `Paid fines are never removed. A backup file will be downloaded first.`
+      );
+      if (!ok) return;
+
+      const done = await cleanupWrongYearFines(true);
+      const blob = new Blob([JSON.stringify(done.backup, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `wrong-year-fines-backup-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      setResult({ success: true, message: `Removed ${done.fineCount} wrong-year fine(s) (₱${done.totalAmount}) and ${done.attendanceCount} absence record(s). Backup downloaded.` });
+      await loadData();
+      setTimeout(() => setResult(null), 6000);
+    } catch (error) {
+      setResult({ success: false, message: `Error cleaning wrong-year fines: ${error.message}` });
+      setTimeout(() => setResult(null), 5000);
+    }
   };
 
   const handleCleanupNoEventRecords = async () => {
@@ -1240,6 +1274,15 @@ export default function FinesSummary() {
             <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
             <span className="hidden sm:inline">Clear All</span>
             <span className="sm:hidden">Clear</span>
+          </button>
+          <button
+            onClick={handleCleanupWrongYear}
+            className="flex items-center justify-center gap-1 sm:gap-2 bg-purple-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-purple-700 active:bg-purple-800 text-xs sm:text-sm font-medium flex-1 sm:flex-initial touch-manipulation"
+            title="Remove unpaid fines for events that were not meant for the student's year level"
+          >
+            <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">Clean Wrong-Year Fines</span>
+            <span className="sm:hidden">Wrong Year</span>
           </button>
           <button
             onClick={handleCleanupNoEventRecords}

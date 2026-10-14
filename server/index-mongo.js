@@ -913,6 +913,48 @@ app.post('/api/fines/backfill', async (req, res) => {
   }
 });
 
+// Fines/absences that exist for a student whose year level the event was NOT meant for
+// (created before events had year-level targets). Only UNPAID fines and auto-created ("manual")
+// absences are touched; paid fines are always kept. apply=false only previews.
+app.post('/api/fines/cleanup-wrong-year', async (req, res) => {
+  try {
+    const apply = Boolean(req.body && req.body.apply);
+    const [students, events] = await Promise.all([Student.find().lean(), Event.find().lean()]);
+    const yearByStudent = new Map(students.map((s) => [s.student_id, s.year_level]));
+    const eventById = new Map(events.map((e) => [toId(e._id), e]));
+    const outOfScope = (studentId, eventId) => {
+      const event = eventById.get(String(eventId));
+      if (!event || !yearByStudent.has(studentId)) return false;
+      return !isEventForYear(event, yearByStudent.get(studentId));
+    };
+
+    const fines = (await Fine.find({ paid: { $ne: true }, event_id: { $ne: null } }).lean())
+      .filter((f) => outOfScope(f.student_id, f.event_id));
+    const attendance = (await Attendance.find({ status: 'absent', type: 'manual', event_id: { $ne: null } }).lean())
+      .filter((a) => outOfScope(a.student_id, a.event_id));
+
+    const summary = {
+      fineCount: fines.length,
+      attendanceCount: attendance.length,
+      totalAmount: fines.reduce((sum, f) => sum + Number(f.amount || 0), 0),
+      students: new Set(fines.map((f) => f.student_id)).size,
+    };
+
+    if (!apply) return res.json({ success: true, applied: false, ...summary });
+
+    if (fines.length) await Fine.deleteMany({ _id: { $in: fines.map((f) => f._id) } });
+    if (attendance.length) await Attendance.deleteMany({ _id: { $in: attendance.map((a) => a._id) } });
+    res.json({
+      success: true,
+      applied: true,
+      ...summary,
+      backup: { fines: fines.map(mapFine), attendance: attendance.map(mapAttendance) },
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get('/api/fines/:studentId', async (req, res) => {
   try {
     const rows = await Fine.find({ student_id: req.params.studentId }).sort({ date: -1 }).lean();

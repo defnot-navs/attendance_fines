@@ -341,6 +341,14 @@ export async function updateEvent(id, updates) {
  * Idempotent; only creates missing records. Server-side only (offline-added students are
  * covered automatically when they sync to the server).
  */
+export async function cleanupWrongYearFines(apply = false) {
+  await checkBackendAvailability();
+  if (!backendAvailable) {
+    throw new Error('Backend unavailable. Connect to the server to clean up fines.');
+  }
+  return apiClient.cleanupWrongYearFines(apply);
+}
+
 export async function backfillApplicableFines(studentId = null) {
   await checkBackendAvailability();
   if (!backendAvailable) {

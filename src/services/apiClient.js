@@ -239,6 +239,13 @@ class APIClient {
     });
   }
 
+  async cleanupWrongYearFines(apply = false) {
+    return this.request('/fines/cleanup-wrong-year', {
+      method: 'POST',
+      body: JSON.stringify({ apply }),
+    });
+  }
+
   async cleanupNoEventRecords() {
     return this.request('/cleanup/no-event-records', {
       method: 'POST',
