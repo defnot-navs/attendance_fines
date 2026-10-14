@@ -15,6 +15,7 @@ export default function FinesSummary() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [events, setEvents] = useState([]);
+  const [fineEventColumns, setFineEventColumns] = useState([]);
   const [expandedEvents, setExpandedEvents] = useState({});
   const [expandedStudents, setExpandedStudents] = useState({});
   const [eventAttendance, setEventAttendance] = useState({});
@@ -110,16 +111,40 @@ export default function FinesSummary() {
         allEvents.map((event) => [normalizeEventId(event.id), event.name || `Event ${event.id}`])
       );
 
+      const NO_EVENT_NAME = 'General / No Event';
+      const fineEventName = (fine) => {
+        const normalizedId = normalizeEventId(fine.eventId);
+        if (normalizedId === null) return NO_EVENT_NAME;
+        return eventNameById.get(normalizedId) || NO_EVENT_NAME;
+      };
+
+      // Consistent column/list order: events by date, "General / No Event" last.
+      const eventRank = new Map();
+      [...allEvents]
+        .sort((a, b) => new Date(a.date) - new Date(b.date))
+        .forEach((event) => {
+          const name = eventNameById.get(normalizeEventId(event.id));
+          if (!eventRank.has(name)) eventRank.set(name, eventRank.size);
+        });
+      const rankOf = (name) => (eventRank.has(name) ? eventRank.get(name) : Number.MAX_SAFE_INTEGER);
+
       const buildEventText = (fines) => {
-        const names = [...new Set(
-          fines.map((fine) => {
-            const normalizedId = normalizeEventId(fine.eventId);
-            if (normalizedId === null) return 'General / No Event';
-            return eventNameById.get(normalizedId) || 'General / No Event';
-          })
-        )];
+        const names = [...new Set(fines.map(fineEventName))].sort((a, b) => rankOf(a) - rankOf(b));
         return names.length > 0 ? names.join('; ') : '-';
       };
+
+      const buildEventAmounts = (fines) => {
+        const amounts = {};
+        fines.forEach((fine) => {
+          const name = fineEventName(fine);
+          amounts[name] = (amounts[name] || 0) + Number(fine.amount || 0);
+        });
+        return amounts;
+      };
+
+      setFineEventColumns(
+        [...new Set(allFines.map(fineEventName))].sort((a, b) => rankOf(a) - rankOf(b))
+      );
 
       const finesByStudent = new Map();
       const unpaidFinesByStudent = new Map();
@@ -145,6 +170,9 @@ export default function FinesSummary() {
         fineEventsText: buildEventText(finesByStudent.get(student.studentId) || []),
         unpaidFineEventsText: buildEventText(unpaidFinesByStudent.get(student.studentId) || []),
         paidFineEventsText: buildEventText(paidFinesByStudent.get(student.studentId) || []),
+        fineEventAmounts: buildEventAmounts(finesByStudent.get(student.studentId) || []),
+        unpaidFineEventAmounts: buildEventAmounts(unpaidFinesByStudent.get(student.studentId) || []),
+        paidFineEventAmounts: buildEventAmounts(paidFinesByStudent.get(student.studentId) || []),
       }));
 
       const knownEventIds = new Set(allEvents.map((event) => normalizeEventId(event.id)));
@@ -265,12 +293,17 @@ export default function FinesSummary() {
       return;
     }
 
+    const amountsKey = statsDetails.type === 'unpaid' ? 'unpaidFineEventAmounts'
+      : statsDetails.type === 'paid' ? 'paidFineEventAmounts' : 'fineEventAmounts';
+    // Only include event columns that at least one exported student has a fine for.
+    const usedColumns = fineEventColumns.filter((name) => rows.some((s) => s[amountsKey]?.[name]));
+
     const exportRows = rows.map((s) => ({
       'Student ID': s.studentId,
       Name: s.name,
       Program: s.program || '-',
       Year: s.yearLevel || '-',
-      Events: getStatsDetailEventsText(s),
+      ...Object.fromEntries(usedColumns.map((name) => [name, s[amountsKey]?.[name] || ''])),
       'Total Fines': Number(s.totalFines || 0),
       'Unpaid Fines': Number(s.unpaidFines || 0),
       'Paid Fines': Number(s.paidFines || 0),
