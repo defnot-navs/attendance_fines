@@ -3,6 +3,7 @@ import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, Che
 import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, deleteAttendance, cleanupNoEventRecords, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
+import { exportToExcel } from '../utils/excelExport';
 import DataTable from './common/DataTable';
 import { notify } from '../utils/toast';
 import PageHeading from './common/PageHeading';
@@ -16,6 +17,7 @@ export default function FinesSummary() {
   const [searchTerm, setSearchTerm] = useState('');
   const [events, setEvents] = useState([]);
   const [fineEventColumns, setFineEventColumns] = useState([]);
+  const [membershipDetails, setMembershipDetails] = useState({ open: false, type: 'total' });
   const [expandedEvents, setExpandedEvents] = useState({});
   const [expandedStudents, setExpandedStudents] = useState({});
   const [eventAttendance, setEventAttendance] = useState({});
@@ -286,7 +288,7 @@ export default function FinesSummary() {
     return studentRow.fineEventsText || '-';
   };
 
-  const handleExportStatsDetails = () => {
+  const handleExportStatsDetails = (format = 'csv') => {
     const rows = getStatsDetailRows(statsDetails.type);
     if (rows.length === 0) {
       notify('No student records to export for this category.');
@@ -313,7 +315,54 @@ export default function FinesSummary() {
     }));
 
     const filePrefix = statsDetailMeta[statsDetails.type]?.exportPrefix || 'fines-drilldown';
-    exportToCSV(exportRows, `${filePrefix}-${new Date().toISOString().split('T')[0]}.csv`);
+    const stamp = new Date().toISOString().split('T')[0];
+    if (format === 'xlsx') {
+      exportToExcel(exportRows, `${filePrefix}-${stamp}.xlsx`, statsDetailMeta[statsDetails.type]?.title || 'Fines');
+    } else {
+      exportToCSV(exportRows, `${filePrefix}-${stamp}.csv`);
+    }
+  };
+
+  const membershipMeta = {
+    total: { title: 'All Membership Records', exportPrefix: 'membership-all' },
+    unpaid: { title: 'Unpaid Membership', exportPrefix: 'membership-unpaid' },
+    paid: { title: 'Paid Membership', exportPrefix: 'membership-paid' },
+    members: { title: 'Paid Members', exportPrefix: 'membership-members' },
+  };
+
+  const getMembershipRows = (type) => {
+    const byId = new Map(summary.map((s) => [String(s.studentId), s]));
+    return membershipPayments
+      .filter((p) => (type === 'unpaid' ? !p.paid : type === 'paid' ? p.paid : true))
+      .map((p) => {
+        const st = byId.get(String(p.studentId));
+        return {
+          'Student ID': p.studentId,
+          Name: st?.name || '-',
+          Program: st?.program || '-',
+          Year: st?.yearLevel || '-',
+          Status: p.paid ? 'Paid' : 'Unpaid',
+          Amount: Number(p.amount || 0),
+          'Payment Method': p.paid ? p.paymentMethod || '' : '',
+          'Receipt Number': p.receiptNumber || '',
+          'Date Paid': p.paid && p.paidAt ? new Date(p.paidAt).toLocaleDateString() : '',
+          'Academic Year': p.academicYear || '',
+          Semester: p.semester || '',
+        };
+      })
+      .sort((a, b) => String(a.Name).localeCompare(String(b.Name)));
+  };
+
+  const handleExportMembership = (format) => {
+    const rows = getMembershipRows(membershipDetails.type);
+    if (rows.length === 0) {
+      notify('No membership records to export for this category.');
+      return;
+    }
+    const meta = membershipMeta[membershipDetails.type];
+    const stamp = new Date().toISOString().split('T')[0];
+    if (format === 'xlsx') exportToExcel(rows, `${meta.exportPrefix}-${stamp}.xlsx`, meta.title);
+    else exportToCSV(rows, `${meta.exportPrefix}-${stamp}.csv`);
   };
 
   const handleCleanupNoEventRecords = async () => {
@@ -1229,7 +1278,7 @@ export default function FinesSummary() {
               <DollarSign className="w-4 h-4 sm:w-5 sm:h-5" />
               Attendance Fines
             </h3>
-            <p className="text-xs text-gray-500 mb-2">Click a card to view the matching students and export CSV.</p>
+            <p className="text-xs text-gray-500 mb-2">Click a card to view the matching students and export to Excel or CSV.</p>
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
               <button
                 onClick={() => openStatsDetails('total')}
@@ -1299,8 +1348,9 @@ export default function FinesSummary() {
               <CreditCard className="w-5 h-5" />
               Membership Fees
             </h3>
+            <p className="text-xs text-gray-500 mb-2">Click a card to view the members and export to Excel or CSV.</p>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+              <button onClick={() => setMembershipDetails({ open: true, type: 'total' })} className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 text-left hover:shadow-sm hover:border-indigo-300 transition">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-indigo-600 font-medium">Total Membership</p>
@@ -1310,9 +1360,9 @@ export default function FinesSummary() {
                   </div>
                   <CreditCard className="w-8 h-8 text-indigo-600 opacity-50" />
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <button onClick={() => setMembershipDetails({ open: true, type: 'unpaid' })} className="bg-red-50 border border-red-200 rounded-lg p-4 text-left hover:shadow-sm hover:border-red-300 transition">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-red-600 font-medium">Unpaid Membership</p>
@@ -1322,9 +1372,9 @@ export default function FinesSummary() {
                   </div>
                   <XCircle className="w-8 h-8 text-red-600 opacity-50" />
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <button onClick={() => setMembershipDetails({ open: true, type: 'paid' })} className="bg-green-50 border border-green-200 rounded-lg p-4 text-left hover:shadow-sm hover:border-green-300 transition">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-green-600 font-medium">Paid Membership</p>
@@ -1334,9 +1384,9 @@ export default function FinesSummary() {
                   </div>
                   <CheckCircle className="w-8 h-8 text-green-600 opacity-50" />
                 </div>
-              </div>
+              </button>
 
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <button onClick={() => setMembershipDetails({ open: true, type: 'members' })} className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-left hover:shadow-sm hover:border-purple-300 transition">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-purple-600 font-medium">Paid Members</p>
@@ -1346,7 +1396,7 @@ export default function FinesSummary() {
                   </div>
                   <Users className="w-8 h-8 text-purple-600 opacity-50" />
                 </div>
-              </div>
+              </button>
             </div>
           </div>
         </>
@@ -1645,7 +1695,13 @@ export default function FinesSummary() {
 
             <div className="px-4 py-3 border-t flex items-center justify-end gap-2">
               <button
-                onClick={handleExportStatsDetails}
+                onClick={() => handleExportStatsDetails('xlsx')}
+                className="px-3 py-2 text-sm rounded bg-green-600 text-white hover:bg-green-700"
+              >
+                Export Excel
+              </button>
+              <button
+                onClick={() => handleExportStatsDetails('csv')}
                 className="px-3 py-2 text-sm rounded bg-gray-700 text-white hover:bg-gray-800"
               >
                 Export CSV
@@ -1654,6 +1710,67 @@ export default function FinesSummary() {
           </div>
         </div>
       )}
+
+      {membershipDetails.open && (() => {
+        const rows = getMembershipRows(membershipDetails.type);
+        const close = () => setMembershipDetails({ open: false, type: 'total' });
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/40" onClick={close} />
+            <div className="relative z-10 w-full max-w-5xl bg-white rounded-xl shadow-xl border">
+              <div className="px-4 py-3 border-b flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900">{membershipMeta[membershipDetails.type].title}</h3>
+                  <p className="text-sm text-gray-600">{rows.length} record(s)</p>
+                </div>
+                <button onClick={close} className="px-3 py-1 text-sm rounded bg-gray-100 hover:bg-gray-200">
+                  Close
+                </button>
+              </div>
+              <div className="p-4 max-h-[65vh] overflow-auto">
+                {rows.length === 0 ? (
+                  <p className="text-sm text-gray-500">No membership records found for this category.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-gray-50">
+                      <tr className="text-left">
+                        <th className="px-3 py-2">Student ID</th>
+                        <th className="px-3 py-2">Name</th>
+                        <th className="px-3 py-2">Program</th>
+                        <th className="px-3 py-2">Status</th>
+                        <th className="px-3 py-2 text-right">Amount</th>
+                        <th className="px-3 py-2">Method</th>
+                        <th className="px-3 py-2">Receipt</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((row) => (
+                        <tr key={`${row['Student ID']}-${row['Academic Year']}-${row.Semester}`} className="border-t">
+                          <td className="px-3 py-1.5 whitespace-nowrap">{row['Student ID']}</td>
+                          <td className="px-3 py-1.5">{row.Name}</td>
+                          <td className="px-3 py-1.5">{row.Program}</td>
+                          <td className={`px-3 py-1.5 font-medium ${row.Status === 'Paid' ? 'text-green-600' : 'text-red-600'}`}>{row.Status}</td>
+                          <td className="px-3 py-1.5 text-right">{formatCurrency(row.Amount)}</td>
+                          <td className="px-3 py-1.5">{row['Payment Method'] || '-'}</td>
+                          <td className="px-3 py-1.5">{row['Receipt Number'] || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div className="px-4 py-3 border-t flex items-center justify-end gap-2">
+                <button onClick={() => handleExportMembership('xlsx')} className="px-3 py-2 text-sm rounded bg-green-600 text-white hover:bg-green-700">
+                  Export Excel
+                </button>
+                <button onClick={() => handleExportMembership('csv')} className="px-3 py-2 text-sm rounded bg-gray-700 text-white hover:bg-gray-800">
+                  Export CSV
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Back to Top Button */}
       {showBackToTop && (
