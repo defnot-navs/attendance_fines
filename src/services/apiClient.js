@@ -125,6 +125,20 @@ class APIClient {
     return this.request('/events');
   }
 
+  async updateEvent(id, updates) {
+    return this.request(`/events/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async backfillFines(studentId = null) {
+    return this.request('/fines/backfill', {
+      method: 'POST',
+      body: JSON.stringify(studentId ? { studentId } : {}),
+    });
+  }
+
   async deleteEvent(id) {
     return this.request(`/events/${id}`, {
       method: 'DELETE',

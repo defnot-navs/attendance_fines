@@ -1,3 +1,4 @@
+import { formatEventDate } from '../utils/eventUtils';
 import React from 'react';
 import { Home, QrCode, Upload, CalendarDays, DollarSign, ArrowRight } from 'lucide-react';
 import PageHeading from './common/PageHeading';
@@ -42,7 +43,7 @@ export default function Dashboard() {
                 <li key={event.id} className="py-3 flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="font-medium text-slate-900 truncate">{event.name}</p>
-                    <p className="text-xs text-slate-500">{new Date(event.date).toLocaleDateString()}</p>
+                    <p className="text-xs text-slate-500">{formatEventDate(event.date)}</p>
                   </div>
                   {event.fineAmount != null && (
                     <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-50 text-amber-700 ring-1 ring-amber-200 whitespace-nowrap">

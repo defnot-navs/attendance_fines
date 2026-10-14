@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, Trash2, Edit2, Save, X, AlertTriangle, ArrowUp } from 'lucide-react';
-import { getAllStudents, deleteAllStudents, deleteStudent, db } from '../db/hybridDatabase';
+import { Users, Search, Trash2, Edit2, Save, X, AlertTriangle, ArrowUp, RefreshCw } from 'lucide-react';
+import { getAllStudents, deleteAllStudents, deleteStudent, backfillApplicableFines, db } from '../db/hybridDatabase';
 import DataTable from './common/DataTable';
 import { notify } from '../utils/toast';
 import PageHeading from './common/PageHeading';
@@ -95,6 +95,22 @@ export default function StudentsManagement() {
   const handleCancel = () => {
     setEditingId(null);
     setEditForm({});
+  };
+
+  const handleAssignMissingFines = async () => {
+    if (!confirm('Add the absences and fines of past events that apply to each student year level but are missing? Existing records and payments are not changed and nothing is duplicated.')) return;
+    try {
+      const res = await backfillApplicableFines();
+      setResult({
+        success: true,
+        message: res.finesCreated === 0 && res.attendanceCreated === 0
+          ? 'Everything is already up to date. No missing records found.'
+          : `Added ${res.attendanceCreated} missing absence record(s) and ${res.finesCreated} fine(s).`
+      });
+      setTimeout(() => setResult(null), 6000);
+    } catch (error) {
+      setResult({ success: false, message: 'Error assigning fines: ' + error.message });
+    }
   };
 
   const handleDeleteAll = async () => {
@@ -282,6 +298,16 @@ export default function StudentsManagement() {
             <p className="text-2xl sm:text-3xl font-bold text-blue-600">{students.length}</p>
             <p className="text-xs sm:text-sm text-gray-600">Total Students</p>
           </div>
+          {students.length > 0 && (
+            <button
+              onClick={handleAssignMissingFines}
+              className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors w-full sm:w-auto text-sm"
+              title="Add missing absences and fines of past events for each student's year level"
+            >
+              <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span>Assign Missing Fines</span>
+            </button>
+          )}
           {students.length > 0 && (
             <button
               onClick={handleDeleteAll}

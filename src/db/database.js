@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import { isEventForYear } from '../utils/eventUtils';
 
 /**
  * IndexedDB Database Schema
@@ -332,6 +333,7 @@ export async function recordAttendance(studentId, type = 'qr', status = 'present
   await db.syncQueue.add({
     table: 'attendance',
     action: 'add',
+    recordId: id,
     data: record,
     timestamp: new Date().toISOString(),
     synced: false
@@ -422,6 +424,7 @@ export async function recordFine(studentId, amount, reason, date = null, eventId
   await db.syncQueue.add({
     table: 'fines',
     action: 'add',
+    recordId: id,
     data: record,
     timestamp: new Date().toISOString(),
     synced: false
@@ -488,6 +491,7 @@ export async function cacheStudentPortalSnapshot({ student, attendance = [], fin
           endTime: e.endTime ?? null,
           fineAmount: e.fineAmount ?? null,
           description: e.description ?? '',
+          targetYearLevels: Array.isArray(e.targetYearLevels) ? e.targetYearLevels : [],
           createdAt: e.createdAt ?? new Date().toISOString(),
         }));
       if (normalizedEvents.length > 0) {
@@ -499,6 +503,21 @@ export async function cacheStudentPortalSnapshot({ student, attendance = [], fin
     // This avoids touching locally-created offline records (synced=false).
     await db.attendance.where('studentId').equals(normalizedStudent.studentId).and(r => r.synced === true).delete();
     await db.fines.where('studentId').equals(normalizedStudent.studentId).and(r => r.synced === true).delete();
+
+    // The server snapshot is authoritative. Drop local un-synced copies of records the server
+    // already has, otherwise this device would show them twice (e.g. a 150 fine as 300).
+    const fineSig = (f) => [f.eventId ?? '', f.reason ?? '', f.date ?? '', Number(f.amount)].join('|');
+    const attendanceSig = (a) => [a.eventId ?? '', a.date ?? '', a.session ?? 'AM_IN'].join('|');
+    const serverFineSigs = new Set((fines || []).map(fineSig));
+    const serverAttendanceSigs = new Set((attendance || []).map(attendanceSig));
+    await db.fines
+      .where('studentId').equals(normalizedStudent.studentId)
+      .and(r => r.synced !== true && serverFineSigs.has(fineSig(r)))
+      .delete();
+    await db.attendance
+      .where('studentId').equals(normalizedStudent.studentId)
+      .and(r => r.synced !== true && serverAttendanceSigs.has(attendanceSig(r)))
+      .delete();
 
     if (Array.isArray(attendance) && attendance.length > 0) {
       const normalizedAttendance = attendance
@@ -836,10 +855,39 @@ export async function addEvent(eventData) {
     endTime: eventData.endTime || null,
     fineAmount: eventData.fineAmount || null,
     description: eventData.description || '',
+    targetYearLevels: Array.isArray(eventData.targetYearLevels) ? eventData.targetYearLevels.map(Number) : [],
     createdAt: new Date().toISOString()
   };
-  
+
   return await db.events.add(event);
+}
+
+/**
+ * Update event fields. Changing the date also corrects the date stamped on the event's
+ * attendance and fines (amounts and paid status are untouched).
+ */
+export async function updateEvent(id, updates) {
+  const patch = {};
+  if (updates.name !== undefined) patch.name = String(updates.name);
+  if (updates.date !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}/.test(String(updates.date))) throw new Error('A valid event date (YYYY-MM-DD) is required');
+    patch.date = String(updates.date).slice(0, 10);
+  }
+  if (updates.startTime !== undefined) patch.startTime = updates.startTime || null;
+  if (updates.lateThreshold !== undefined) patch.lateThreshold = updates.lateThreshold || null;
+  if (updates.endTime !== undefined) patch.endTime = updates.endTime || null;
+  if (updates.fineAmount !== undefined) patch.fineAmount = updates.fineAmount === '' ? null : updates.fineAmount;
+  if (updates.description !== undefined) patch.description = String(updates.description);
+  if (updates.targetYearLevels !== undefined) patch.targetYearLevels = updates.targetYearLevels.map(Number);
+
+  await db.transaction('rw', db.events, db.attendance, db.fines, async () => {
+    await db.events.update(id, patch);
+    if (patch.date) {
+      await db.attendance.where('eventId').equals(id).modify({ date: patch.date });
+      await db.fines.where('eventId').equals(id).modify({ date: patch.date });
+    }
+  });
+  return true;
 }
 
 /**
@@ -888,25 +936,32 @@ export async function markRemainingStudentsAbsent(eventId) {
     const recordedStudentIds = new Set(eventAttendance.map(a => a.studentId));
     
     // Find students who haven't been marked
-    const absentStudents = allStudents.filter(s => !recordedStudentIds.has(s.studentId));
-    
+    // (only students of the year level(s) the event is for)
+    const absentStudents = allStudents.filter(
+      s => !recordedStudentIds.has(s.studentId) && isEventForYear(event, s.yearLevel)
+    );
+
     // Get the absent fine rule
-    const absentFineRule = await getFineRules().then(rules => 
+    const absentFineRule = await getFineRules().then(rules =>
       rules.find(r => r.type === 'absent')
     );
-    
+    // Event-specific fine wins over the global default
+    const absentFineAmount = Number(event.fineAmount) > 0
+      ? Number(event.fineAmount)
+      : (absentFineRule ? Number(absentFineRule.amount) : 0);
+
     let markedCount = 0;
-    
+
     // Mark each absent student and create fines
     for (const student of absentStudents) {
-      // Record absent attendance
-      await recordAttendance(student.studentId, 'manual', 'absent', eventId);
-      
-      // Record fine if rule exists
-      if (absentFineRule && absentFineRule.amount > 0) {
+      // Record absent attendance (stamped with the event date, not today's date)
+      await recordAttendance(student.studentId, 'manual', 'absent', eventId, 'AM_IN', event.date);
+
+      // Record fine if an amount applies
+      if (absentFineAmount > 0) {
         await recordFine(
           student.studentId,
-          absentFineRule.amount,
+          absentFineAmount,
           `Absent - ${event.name}`,
           event.date,
           eventId
@@ -931,7 +986,16 @@ export async function markRemainingStudentsAbsent(eventId) {
  * Mark sync queue item as synced
  */
 export async function markAsSynced(id) {
+  const item = await db.syncQueue.get(id);
   await db.syncQueue.update(id, { synced: true });
+
+  // Also flag the underlying record. Previously only the queue entry was flagged, so the local
+  // fine/attendance row stayed "unsynced" forever; once the server copy was cached next to it
+  // (cacheStudentPortalSnapshot), the device showed the same fine twice (e.g. 150 -> 300).
+  const recordId = item?.recordId ?? item?.data?.id;
+  if (recordId !== undefined && recordId !== null && (item.table === 'fines' || item.table === 'attendance')) {
+    await db.table(item.table).update(recordId, { synced: true });
+  }
 }
 
 /**

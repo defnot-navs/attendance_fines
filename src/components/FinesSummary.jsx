@@ -1,3 +1,4 @@
+import { formatEventDate } from '../utils/eventUtils';
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
 import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, deleteAttendance, cleanupNoEventRecords, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
@@ -824,7 +825,7 @@ export default function FinesSummary() {
         header: 'Date',
         sortable: true,
         accessor: (row) => row.event.date,
-        render: (row) => new Date(row.event.date).toLocaleDateString(),
+        render: (row) => formatEventDate(row.event.date),
         cellClassName: 'text-gray-600',
       },
       {
@@ -1467,7 +1468,7 @@ export default function FinesSummary() {
                           <div className="text-left">
                             <h4 className="font-semibold text-gray-900">{event.name}</h4>
                             <p className="text-sm text-gray-600">
-                              {new Date(event.date).toLocaleDateString()}
+                              {formatEventDate(event.date)}
                               {event.startTime && ` • ${event.startTime}`}
                               {event.lateThreshold && ` → Late: ${event.lateThreshold}`}
                               {event.endTime && ` - ${event.endTime}`}

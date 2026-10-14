@@ -6,6 +6,7 @@ import { autoGenerateFines } from '../utils/finesCalculator';
 import { parseCSV, parseExcel } from '../utils/fileParser';
 import { notify } from '../utils/toast';
 import PageHeading from './common/PageHeading';
+import { todayLocal } from '../utils/eventUtils';
 
 export default function OnlineMeetingParser() {
   const sessionOptions = [
@@ -17,6 +18,7 @@ export default function OnlineMeetingParser() {
 
   const [attendeeText, setAttendeeText] = useState('');
   const [eventTitle, setEventTitle] = useState('');
+  const [eventDate, setEventDate] = useState(todayLocal());
   const [yearLevel, setYearLevel] = useState('all');
   const [selectedSessions, setSelectedSessions] = useState(['AM_IN']);
   const [fineAmount, setFineAmount] = useState('');
@@ -187,6 +189,11 @@ export default function OnlineMeetingParser() {
       return;
     }
 
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(eventDate)) {
+      notify('Please enter the date the event took place');
+      return;
+    }
+
     if (selectedSessions.length === 0) {
       notify('Please select at least one attendance session');
       return;
@@ -224,7 +231,7 @@ export default function OnlineMeetingParser() {
       }
 
       // Create event for this online meeting
-      const today = new Date().toISOString().split('T')[0];
+      const eventDay = eventDate;
       const now = new Date();
       const timeStr = now.toTimeString().split(' ')[0].substring(0, 5);
       const eventFineAmount = fineAmount === '' ? null : Number(fineAmount);
@@ -235,12 +242,13 @@ export default function OnlineMeetingParser() {
       
       const eventId = await addEvent({
         name: eventTitle.trim(),
-        date: today,
+        date: eventDay,
         startTime: timeStr,
         endTime: timeStr,
         lateThreshold: 0,
         fineAmount: eventFineAmount,
-        description: `Online Meeting Attendance (Target: ${targetLabel})`
+        description: `Online Meeting Attendance (Target: ${targetLabel})`,
+        targetYearLevels: yearLevel === 'all' ? [] : [parseInt(yearLevel, 10)]
       });
 
       // Record attendance for present students
@@ -283,7 +291,7 @@ export default function OnlineMeetingParser() {
           for (const student of students) {
             if (presentIdsForSession.has(student.studentId)) {
               try {
-                await recordAttendance(student.studentId, 'online', 'present', eventId, session);
+                await recordAttendance(student.studentId, 'online', 'present', eventId, session, eventDay);
                 recorded++;
               } catch (err) {
                 skipped++;
@@ -292,9 +300,9 @@ export default function OnlineMeetingParser() {
             } else {
               absentStudentMap.set(student.studentId, student);
               try {
-                await recordAttendance(student.studentId, 'online', 'absent', eventId, session);
+                await recordAttendance(student.studentId, 'online', 'absent', eventId, session, eventDay);
                 await autoGenerateFines(student.studentId, eventId, 'absent', {
-                  date: today,
+                  date: eventDay,
                   fineAmount: eventFineAmount,
                   session,
                 });
@@ -327,7 +335,7 @@ export default function OnlineMeetingParser() {
         for (const student of parsed.present) {
           for (const session of selectedSessions) {
             try {
-              await recordAttendance(student.studentId, 'online', 'present', eventId, session);
+              await recordAttendance(student.studentId, 'online', 'present', eventId, session, eventDay);
               recorded++;
             } catch (err) {
               skipped++;
@@ -343,9 +351,9 @@ export default function OnlineMeetingParser() {
         for (const student of absentStudents) {
           for (const session of selectedSessions) {
             try {
-              await recordAttendance(student.studentId, 'online', 'absent', eventId, session);
+              await recordAttendance(student.studentId, 'online', 'absent', eventId, session, eventDay);
               await autoGenerateFines(student.studentId, eventId, 'absent', {
-                date: today,
+                date: eventDay,
                 fineAmount: eventFineAmount,
                 session,
               });
@@ -380,6 +388,7 @@ export default function OnlineMeetingParser() {
   const handleClear = () => {
     setAttendeeText('');
     setEventTitle('');
+    setEventDate(todayLocal());
     setYearLevel('all');
     setSelectedSessions(['AM_IN']);
     setFineAmount('');
@@ -407,6 +416,25 @@ export default function OnlineMeetingParser() {
         />
         <p className="mt-1 text-xs text-gray-500">
           This will appear in the fines breakdown
+        </p>
+      </div>
+
+      {/* Event Date */}
+      <div className="mb-4">
+        <label className="block mb-2 font-medium text-gray-700 flex items-center gap-2">
+          <Calendar className="w-4 h-4" />
+          Event Date
+        </label>
+        <input
+          type="date"
+          value={eventDate}
+          onChange={(e) => setEventDate(e.target.value)}
+          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          disabled={processing}
+          required
+        />
+        <p className="mt-1 text-xs text-gray-500">
+          The day the meeting actually took place (not the day you upload the list)
         </p>
       </div>
 

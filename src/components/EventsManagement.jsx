@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Plus, Trash2, CheckCircle, XCircle, UserX } from 'lucide-react';
-import { addEvent, getAllEvents, deleteEvent, markRemainingStudentsAbsent } from '../db/hybridDatabase';
+import { Calendar, Plus, Trash2, CheckCircle, XCircle, UserX, Pencil } from 'lucide-react';
+import { addEvent, getAllEvents, deleteEvent, updateEvent, markRemainingStudentsAbsent } from '../db/hybridDatabase';
+import { YEAR_LEVELS, ordinalYear, formatEventDate, getEventTargetYears, todayLocal } from '../utils/eventUtils';
 import { formatTime12Hour } from '../utils/timeFormatter';
 import PageHeading from './common/PageHeading';
 
@@ -9,13 +10,16 @@ export default function EventsManagement({ onEventSelect }) {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
-    date: new Date().toISOString().split('T')[0],
+    date: todayLocal(),
     startTime: '',
     lateThreshold: '',
     endTime: '',
     fineAmount: '',
+    targetYearLevels: [],
     description: ''
   });
+  const [editing, setEditing] = useState(null); // event being edited
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -66,11 +70,12 @@ export default function EventsManagement({ onEventSelect }) {
       // Reset form
       setFormData({
         name: '',
-        date: new Date().toISOString().split('T')[0],
+        date: todayLocal(),
         startTime: '',
         lateThreshold: '',
         endTime: '',
         fineAmount: '',
+    targetYearLevels: [],
         description: ''
       });
       setShowForm(false);
@@ -86,6 +91,73 @@ export default function EventsManagement({ onEventSelect }) {
       setIsAdding(false);
     }
   };
+
+  const toggleYear = (list, year) =>
+    list.includes(year) ? list.filter((y) => y !== year) : [...list, year].sort((a, b) => a - b);
+
+  const openEdit = (event) => {
+    setEditing({
+      id: event.id,
+      name: event.name,
+      date: String(event.date || '').slice(0, 10),
+      fineAmount: event.fineAmount ?? '',
+      targetYearLevels: getEventTargetYears(event),
+    });
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editing.name.trim()) {
+      setError('Event name is required');
+      return;
+    }
+    setIsSavingEdit(true);
+    setError(null);
+    try {
+      await updateEvent(editing.id, {
+        name: editing.name.trim(),
+        date: editing.date,
+        fineAmount: editing.fineAmount === '' ? '' : Number(editing.fineAmount),
+        targetYearLevels: editing.targetYearLevels,
+      });
+      setResult({ success: true, message: `Event "${editing.name}" updated` });
+      setEditing(null);
+      await loadEvents();
+      setTimeout(() => setResult(null), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const YearPicker = ({ value, onChange, disabled }) => (
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {YEAR_LEVELS.map((year) => (
+          <label
+            key={year}
+            className={`flex items-center gap-2 px-3 py-1.5 border rounded-lg cursor-pointer text-sm select-none ${
+              value.includes(year) ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 bg-white text-gray-700'
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={value.includes(year)}
+              onChange={() => onChange(toggleYear(value, year))}
+              disabled={disabled}
+            />
+            {ordinalYear(year)}
+          </label>
+        ))}
+      </div>
+      <p className="text-xs text-gray-500 mt-1">
+        {value.length === 0
+          ? 'None selected: the event applies to ALL year levels.'
+          : `Only ${value.map(ordinalYear).join(', ')} students will be included.`}
+      </p>
+    </div>
+  );
 
   const handleDelete = async (id, name) => {
     if (!confirm(`Delete event "${name}"? This will not delete attendance records.`)) {
@@ -278,6 +350,16 @@ export default function EventsManagement({ onEventSelect }) {
             </div>
             <div>
               <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
+                Applies To (Year Level)
+              </label>
+              <YearPicker
+                value={formData.targetYearLevels}
+                onChange={(targetYearLevels) => setFormData({ ...formData, targetYearLevels })}
+                disabled={isAdding}
+              />
+            </div>
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">
                 Description (Optional)
               </label>
               <textarea
@@ -323,12 +405,17 @@ export default function EventsManagement({ onEventSelect }) {
                   <div className="flex-1 cursor-pointer" onClick={() => handleSelectEvent(event.id)}>
                     <h4 className="font-semibold text-gray-900 text-sm sm:text-base">{event.name}</h4>
                     <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                      📅 {new Date(event.date).toLocaleDateString('en-US', {
+                      📅 {formatEventDate(event.date, {
                         weekday: 'long',
                         year: 'numeric',
                         month: 'long',
                         day: 'numeric'
                       })}
+                    </p>
+                    <p className="text-xs text-indigo-600 mt-1">
+                      🎓 {getEventTargetYears(event).length === 0
+                        ? 'All year levels'
+                        : getEventTargetYears(event).map(ordinalYear).join(', ')}
                     </p>
                     {(event.startTime || event.lateThreshold || event.endTime) && (
                       <p className="text-xs sm:text-sm text-blue-600 mt-1">
@@ -347,6 +434,13 @@ export default function EventsManagement({ onEventSelect }) {
                     )}
                   </div>
                   <div className="flex flex-col sm:flex-row items-center gap-1 sm:gap-2 shrink-0">
+                    <button
+                      onClick={() => openEdit(event)}
+                      className="text-blue-600 hover:text-blue-700 p-1.5 sm:p-2"
+                      title="Edit event (date, year levels, fine)"
+                    >
+                      <Pencil className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
                     <button
                       onClick={() => handleMarkAbsent(event)}
                       className="text-orange-600 hover:text-orange-700 p-1.5 sm:p-2"
@@ -373,6 +467,75 @@ export default function EventsManagement({ onEventSelect }) {
           </div>
         )}
       </div>
+
+      {/* Edit Event Dialog */}
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => !isSavingEdit && setEditing(null)} />
+          <form onSubmit={handleSaveEdit} className="relative z-10 w-full max-w-md bg-white rounded-xl shadow-xl border p-4 space-y-3">
+            <h3 className="font-semibold text-gray-900">Edit Event</h3>
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Event Name</label>
+              <input
+                type="text"
+                value={editing.name}
+                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Event Date</label>
+              <input
+                type="date"
+                value={editing.date}
+                onChange={(e) => setEditing({ ...editing, date: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Also corrects the date shown on this event&apos;s attendance and fines. Amounts and payments are not changed.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Absent Fine Amount (new records only)</label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={editing.fineAmount}
+                onChange={(e) => setEditing({ ...editing, fineAmount: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Applies To (Year Level)</label>
+              <YearPicker
+                value={editing.targetYearLevels}
+                onChange={(targetYearLevels) => setEditing({ ...editing, targetYearLevels })}
+                disabled={isSavingEdit}
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setEditing(null)}
+                disabled={isSavingEdit}
+                className="px-3 py-2 text-sm rounded bg-gray-100 hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingEdit}
+                className="px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-400"
+              >
+                {isSavingEdit ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

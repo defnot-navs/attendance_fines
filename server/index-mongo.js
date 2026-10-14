@@ -45,6 +45,13 @@ app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 
+// API responses are live data: never let a browser, proxy or CDN serve a stale copy
+// (different devices must always read the same saved values).
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 const mailFrom = process.env.MAIL_FROM || process.env.SMTP_USER || '';
 const mailTransport = process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS
   ? nodemailer.createTransport({
@@ -121,6 +128,8 @@ const eventSchema = new mongoose.Schema(
     end_time: { type: String, required: true },
     fine_amount: { type: Number, default: null },
     description: { type: String, default: '' },
+    // Year levels this event applies to. Empty = every year level.
+    target_year_levels: { type: [Number], default: [] },
   },
   {
     timestamps: { createdAt: 'created_at', updatedAt: false },
@@ -230,6 +239,7 @@ const mapEvent = (doc) => ({
   end_time: doc.end_time,
   fine_amount: doc.fine_amount,
   description: doc.description,
+  target_year_levels: eventTargetYears(doc),
   created_at: doc.created_at,
 });
 
@@ -291,6 +301,138 @@ const mapMembership = (doc, student) => ({
   program: student?.program,
 });
 
+// ===== EVENT TARGETING & FINE ASSIGNMENT HELPERS =====
+const TARGET_RE = /Target\s*:\s*(\d)(?:st|nd|rd|th)?\s*Year/i;
+const SESSION_LABELS = { AM_IN: 'AM IN', AM_OUT: 'AM OUT', PM_IN: 'PM IN', PM_OUT: 'PM OUT' };
+
+function normalizeTargetYears(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(Number).filter((n) => Number.isInteger(n) && n >= 1 && n <= 8))].sort((a, b) => a - b);
+}
+
+// Explicit targets win; legacy events fall back to the "(Target: 1st Year)" description text.
+function eventTargetYears(event) {
+  const explicit = normalizeTargetYears(event.target_year_levels);
+  if (explicit.length > 0) return explicit;
+  const match = `${event.name || ''} ${event.description || ''}`.match(TARGET_RE);
+  return match ? [Number(match[1])] : [];
+}
+
+function isEventForYear(event, yearLevel) {
+  const targets = eventTargetYears(event);
+  return targets.length === 0 || targets.includes(Number(yearLevel));
+}
+
+// Event dates are calendar dates (YYYY-MM-DD). Reject anything else instead of guessing.
+function normalizeEventDate(value) {
+  const match = String(value ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
+}
+
+function mostCommon(values) {
+  const counts = new Map();
+  values.forEach((v) => counts.set(v, (counts.get(v) || 0) + 1));
+  let best = null;
+  let bestCount = 0;
+  counts.forEach((count, v) => {
+    if (count > bestCount) {
+      best = v;
+      bestCount = count;
+    }
+  });
+  return best;
+}
+
+/**
+ * Fines are generated per attendance record (an "absent" row + an absent fine), so a student
+ * added after an event was finalized has neither. Build, per event that already has absences
+ * recorded, what a late-added student of an eligible year level is missing.
+ */
+async function buildAbsencePlans() {
+  const events = await Event.find().lean();
+  const absentRule = await FineRule.findOne({ type: 'absent' }).lean();
+  const ruleAmount = absentRule ? Number(absentRule.amount) : 0;
+  const plans = [];
+
+  for (const event of events) {
+    const eventId = toId(event._id);
+    const absentRows = await Attendance.find({ event_id: eventId, status: 'absent' }, { session: 1 }).lean();
+    if (absentRows.length === 0) continue;
+
+    const sessions = [...new Set(absentRows.map((r) => r.session || 'AM_IN'))];
+    const absentFines = await Fine.find({ event_id: eventId, reason: /^Absent/ }, { reason: 1, amount: 1 }).lean();
+    const attendanceRows = await Attendance.find({ event_id: eventId }, { student_id: 1, session: 1 }).lean();
+    const allEventFines = await Fine.find({ event_id: eventId }, { student_id: 1, reason: 1 }).lean();
+
+    const sessionInfo = sessions.map((session) => {
+      const label = SESSION_LABELS[session] || session;
+      const pool = sessions.length > 1
+        ? absentFines.filter((f) => f.reason === `Absent - ${label}`)
+        : absentFines;
+      const reason = mostCommon(pool.map((f) => f.reason))
+        || (sessions.length > 1 ? `Absent - ${label}` : `Absent - ${event.name}`);
+      const amount = mostCommon(pool.filter((f) => f.reason === reason).map((f) => Number(f.amount)))
+        ?? (Number(event.fine_amount) > 0 ? Number(event.fine_amount) : ruleAmount);
+      return { session, reason, amount };
+    });
+
+    plans.push({
+      event,
+      eventId,
+      sessionInfo,
+      attendanceKeys: new Set(attendanceRows.map((r) => `${r.student_id}|${r.session || 'AM_IN'}`)),
+      fineKeys: new Set(allEventFines.map((f) => `${f.student_id}|${f.reason}`)),
+    });
+  }
+
+  return plans;
+}
+
+/**
+ * Idempotent: only creates what is missing (never edits or removes existing attendance/fines,
+ * never touches paid status). Safe to run any number of times.
+ */
+async function assignApplicableFines(students) {
+  const plans = await buildAbsencePlans();
+  const attendanceDocs = [];
+  const fineDocs = [];
+
+  for (const student of students) {
+    for (const plan of plans) {
+      if (!isEventForYear(plan.event, student.year_level)) continue;
+      for (const { session, reason, amount } of plan.sessionInfo) {
+        const attKey = `${student.student_id}|${session}`;
+        if (plan.attendanceKeys.has(attKey)) continue;
+        plan.attendanceKeys.add(attKey);
+        attendanceDocs.push({
+          student_id: student.student_id,
+          event_id: plan.eventId,
+          date: plan.event.date,
+          session,
+          type: 'manual',
+          status: 'absent',
+        });
+
+        const fineKey = `${student.student_id}|${reason}`;
+        if (amount > 0 && !plan.fineKeys.has(fineKey)) {
+          plan.fineKeys.add(fineKey);
+          fineDocs.push({
+            student_id: student.student_id,
+            event_id: plan.eventId,
+            amount,
+            reason,
+            date: plan.event.date,
+          });
+        }
+      }
+    }
+  }
+
+  if (attendanceDocs.length) await Attendance.insertMany(attendanceDocs);
+  if (fineDocs.length) await Fine.insertMany(fineDocs);
+  return { attendanceCreated: attendanceDocs.length, finesCreated: fineDocs.length };
+}
+
 function formatErrorMessage(error, fallback) {
   const message =
     (error && typeof error.message === 'string' && error.message.trim()) ||
@@ -316,6 +458,22 @@ async function initDatabase() {
 
     dbReady = true;
     console.log('✅ Connected to MongoDB');
+
+    // One-time, idempotent: store the year-level target of legacy events (previously only
+    // written into the description as "Target: 1st Year") in the dedicated field.
+    try {
+      const legacyEvents = await Event.find({
+        $or: [{ target_year_levels: { $exists: false } }, { target_year_levels: { $size: 0 } }],
+      }).lean();
+      for (const ev of legacyEvents) {
+        const match = `${ev.name || ''} ${ev.description || ''}`.match(TARGET_RE);
+        if (match) {
+          await Event.updateOne({ _id: ev._id }, { $set: { target_year_levels: [Number(match[1])] } });
+        }
+      }
+    } catch (migrationError) {
+      console.warn('Event target migration skipped:', migrationError.message);
+    }
 
     await FineRule.updateOne(
       { type: 'absent' },
@@ -348,7 +506,7 @@ app.post('/api/students', async (req, res) => {
   const { studentId, lastName, firstName, middleInitial, yearLevel, program, email } = req.body;
 
   try {
-    await Student.create({
+    const created = await Student.create({
       student_id: studentId,
       last_name: lastName,
       first_name: firstName,
@@ -357,7 +515,15 @@ app.post('/api/students', async (req, res) => {
       program: program || '',
       email: email || '',
     });
-    res.json({ success: true, studentId });
+
+    // Late-added students get the absences/fines of already-finalized events for their year level.
+    let assigned = null;
+    try {
+      assigned = await assignApplicableFines([created]);
+    } catch (assignError) {
+      console.error('Fine assignment for new student failed:', assignError);
+    }
+    res.json({ success: true, studentId, assigned });
   } catch (error) {
     if (error.code === 11000) {
       res.status(409).json({ error: `Student ID ${studentId} already exists` });
@@ -419,6 +585,7 @@ app.get('/api/students/:studentId', async (req, res) => {
 app.put('/api/students/:id', async (req, res) => {
   const { lastName, firstName, middleInitial, yearLevel, program } = req.body;
   try {
+    const before = await Student.findById(req.params.id).lean();
     await Student.findByIdAndUpdate(req.params.id, {
       $set: {
         last_name: lastName,
@@ -428,6 +595,16 @@ app.put('/api/students/:id', async (req, res) => {
         program,
       },
     });
+
+    // Moving to another year level makes that level's existing events apply (additive only).
+    if (before && Number(before.year_level) !== Number(yearLevel)) {
+      try {
+        const after = await Student.findById(req.params.id).lean();
+        if (after) await assignApplicableFines([after]);
+      } catch (assignError) {
+        console.error('Fine assignment after year change failed:', assignError);
+      }
+    }
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -471,16 +648,21 @@ app.delete('/api/students', async (req, res) => {
 
 // ===== EVENTS =====
 app.post('/api/events', async (req, res) => {
-  const { name, date, startTime, lateThreshold, endTime, fineAmount, description } = req.body;
+  const { name, date, startTime, lateThreshold, endTime, fineAmount, description, targetYearLevels } = req.body;
+  const eventDate = normalizeEventDate(date);
+  if (!eventDate) {
+    return res.status(400).json({ error: 'A valid event date (YYYY-MM-DD) is required' });
+  }
   try {
     const created = await Event.create({
       name,
-      date,
+      date: eventDate,
       start_time: startTime,
       late_threshold: lateThreshold,
       end_time: endTime,
       fine_amount: fineAmount ?? null,
       description,
+      target_year_levels: normalizeTargetYears(targetYearLevels),
     });
 
     res.json({ success: true, id: toId(created._id) });
@@ -493,6 +675,40 @@ app.get('/api/events', async (req, res) => {
   try {
     const rows = await Event.find().sort({ date: -1, start_time: -1 }).lean();
     res.json(rows.map(mapEvent));
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/events/:id', async (req, res) => {
+  const { name, date, startTime, lateThreshold, endTime, fineAmount, description, targetYearLevels } = req.body;
+  try {
+    const patch = {};
+    if (name !== undefined) patch.name = String(name);
+    if (date !== undefined) {
+      const eventDate = normalizeEventDate(date);
+      if (!eventDate) return res.status(400).json({ error: 'A valid event date (YYYY-MM-DD) is required' });
+      patch.date = eventDate;
+    }
+    if (startTime !== undefined) patch.start_time = startTime;
+    if (lateThreshold !== undefined) patch.late_threshold = lateThreshold;
+    if (endTime !== undefined) patch.end_time = endTime;
+    if (fineAmount !== undefined) patch.fine_amount = fineAmount === '' ? null : fineAmount;
+    if (description !== undefined) patch.description = String(description);
+    if (targetYearLevels !== undefined) patch.target_year_levels = normalizeTargetYears(targetYearLevels);
+
+    if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'No updates provided' });
+
+    const updated = await Event.findByIdAndUpdate(req.params.id, { $set: patch });
+    if (!updated) return res.status(404).json({ error: 'Event not found' });
+
+    // Correcting an event's date also corrects the dates stamped on its attendance and fines
+    // (amounts, paid status and everything else stay untouched).
+    if (patch.date) {
+      await Attendance.updateMany({ event_id: req.params.id }, { $set: { date: patch.date } });
+      await Fine.updateMany({ event_id: req.params.id }, { $set: { date: patch.date } });
+    }
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -512,12 +728,20 @@ app.post('/api/events/:id/mark-absent', async (req, res) => {
     const event = await Event.findById(req.params.id).lean();
     if (!event) return res.status(404).json({ error: 'Event not found' });
 
+    // Event-specific fine wins over the global default (same rule as the QR / online meeting flows).
     const absentRule = await FineRule.findOne({ type: 'absent' }).lean();
-    const absentFineAmount = absentRule ? Number(absentRule.amount) : 0;
+    const absentFineAmount = Number(event.fine_amount) > 0
+      ? Number(event.fine_amount)
+      : absentRule ? Number(absentRule.amount) : 0;
+    const absentReason = `Absent - ${event.name}`;
 
-    const allStudents = await Student.find({}, { student_id: 1 }).lean();
+    // Only students of the year level(s) this event is for.
+    const allStudents = (await Student.find({}, { student_id: 1, year_level: 1 }).lean())
+      .filter((s) => isEventForYear(event, s.year_level));
     const existingAttendance = await Attendance.find({ event_id: req.params.id }, { student_id: 1 }).lean();
     const existingSet = new Set(existingAttendance.map(a => a.student_id));
+    const existingFines = await Fine.find({ event_id: req.params.id, reason: absentReason }, { student_id: 1 }).lean();
+    const fineSet = new Set(existingFines.map(f => f.student_id));
 
     const studentsToMark = allStudents
       .map(s => s.student_id)
@@ -534,12 +758,12 @@ app.post('/api/events/:id/mark-absent', async (req, res) => {
         status: 'absent',
       });
 
-      if (absentFineAmount > 0) {
+      if (absentFineAmount > 0 && !fineSet.has(studentId)) {
         await Fine.create({
           student_id: studentId,
           event_id: req.params.id,
           amount: absentFineAmount,
-          reason: `Absent - ${event.name}`,
+          reason: absentReason,
           date: event.date,
         });
       }
@@ -648,15 +872,42 @@ app.delete('/api/attendance', async (req, res) => {
 app.post('/api/fines', async (req, res) => {
   const { studentId, eventId, amount, reason, date } = req.body;
   try {
+    const normalizedEventId = eventId === null || eventId === undefined || eventId === '' ? null : String(eventId);
+
+    // An event fine is unique per student/event/reason/date. Replays (a twice-synced offline queue,
+    // a double-submitted request) must not stack a second charge.
+    if (normalizedEventId) {
+      const duplicate = await Fine.findOne({
+        student_id: studentId,
+        event_id: normalizedEventId,
+        reason,
+        date,
+      }).lean();
+      if (duplicate) return res.json({ success: true, id: toId(duplicate._id), duplicate: true });
+    }
+
     const created = await Fine.create({
       student_id: studentId,
-      event_id: eventId ?? null,
+      event_id: normalizedEventId,
       amount: Number(amount),
       reason,
       date,
     });
 
     res.json({ success: true, id: toId(created._id) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Idempotent repair: gives every student the absences/fines of finalized events that apply to
+// their year level and that they are missing. Never edits, removes or un-pays anything.
+app.post('/api/fines/backfill', async (req, res) => {
+  try {
+    const { studentId } = req.body || {};
+    const students = await Student.find(studentId ? { student_id: studentId } : {}).lean();
+    const result = await assignApplicableFines(students);
+    res.json({ success: true, students: students.length, ...result });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

@@ -269,6 +269,7 @@ export async function addEvent(event) {
         endTime: event.endTime,
         fineAmount: event.fineAmount,
         description: event.description,
+        targetYearLevels: event.targetYearLevels || [],
       });
 
       // Keep return shape consistent with IndexedDB addEvent (numeric id)
@@ -303,6 +304,7 @@ export async function getAllEvents() {
         endTime: e.end_time,
         fineAmount: e.fine_amount,
         description: e.description,
+        targetYearLevels: Array.isArray(e.target_year_levels) ? e.target_year_levels : [],
         createdAt: e.created_at,
       }));
     } catch (error) {
@@ -310,10 +312,41 @@ export async function getAllEvents() {
       backendAvailable = false;
     }
   }
-  
+
   // Fallback to IndexedDB
   const { getAllEvents: getAllEventsLocal } = await import('./database');
   return getAllEventsLocal();
+}
+
+export async function updateEvent(id, updates) {
+  await checkBackendAvailability();
+
+  if (backendAvailable) {
+    try {
+      return await apiClient.updateEvent(id, updates);
+    } catch (error) {
+      // Validation errors (e.g. invalid date) must reach the user, not silently fall back.
+      if (/valid event date|No updates|not found/i.test(error.message || '')) throw error;
+      console.error('Backend failed, falling back to IndexedDB:', error);
+      backendAvailable = false;
+    }
+  }
+
+  const { updateEvent: updateEventLocal } = await import('./database');
+  return updateEventLocal(id, updates);
+}
+
+/**
+ * Give students the absences/fines of already-finalized events for their year level.
+ * Idempotent; only creates missing records. Server-side only (offline-added students are
+ * covered automatically when they sync to the server).
+ */
+export async function backfillApplicableFines(studentId = null) {
+  await checkBackendAvailability();
+  if (!backendAvailable) {
+    throw new Error('Backend unavailable. Connect to the server to assign fines.');
+  }
+  return apiClient.backfillFines(studentId);
 }
 
 export async function deleteEvent(id) {

@@ -1,3 +1,4 @@
+import { formatEventDate } from '../utils/eventUtils';
 import React, { useState, useEffect } from 'react';
 import { FileText, Upload, Trash2, CheckCircle, XCircle, Calendar, Clock, ArrowUp, Search, Paperclip, ShieldCheck, Layers } from 'lucide-react';
 import { addExcuse, getAllExcuses, deleteExcuse, clearAllExcuses, getAllStudents, getAllEvents, markAttendanceAsExcused, db } from '../db/hybridDatabase';
@@ -348,7 +349,7 @@ export default function ExcuseManagement() {
                   <option value="">Select event</option>
                   {events.map(event => (
                     <option key={event.id} value={event.id}>
-                      {event.name} - {new Date(event.date).toLocaleDateString()}
+                      {event.name} - {formatEventDate(event.date)}
                     </option>
                   ))}
                 </select>

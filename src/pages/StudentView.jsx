@@ -9,14 +9,7 @@ import { formatCurrency } from '../utils/finesCalculator';
 import { formatTime12Hour } from '../utils/timeFormatter';
 import { notify } from '../utils/toast';
 import DataTable from '../components/common/DataTable';
-
-const SAMPLE_ROWS = [
-  { date: 'Jul 21, 2025', event: 'General Assembly', status: 'present', remarks: '-' },
-  { date: 'Jul 18, 2025', event: 'Advanced Programming', status: 'late', remarks: '5 mins late' },
-  { date: 'Jul 16, 2025', event: 'Team Building', status: 'present', remarks: '-' },
-  { date: 'Jul 14, 2025', event: 'Web Development', status: 'absent', remarks: 'No excuse' },
-  { date: 'Jul 11, 2025', event: 'General Assembly', status: 'present', remarks: '-' },
-];
+import { isEventForYear, formatEventDate } from '../utils/eventUtils';
 
 const STATUS_PILL = {
   present: { cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500', label: 'Present' },
@@ -116,7 +109,7 @@ export default function StudentView() {
       // Group attendance by event
       const eventAttMap = {};
       for (const event of allEvents) {
-        const eventAtt = attendanceData.find(a => a.eventId === event.id);
+        const eventAtt = attendanceData.find(a => String(a.eventId) === String(event.id));
         eventAttMap[event.id] = eventAtt || null;
       }
 
@@ -148,14 +141,6 @@ export default function StudentView() {
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
-  const getTargetYearFromEvent = (event) => {
-    const text = `${event?.name || ''} ${event?.description || ''}`;
-    const match = text.match(/Target\s*:\s*(\d)(?:st|nd|rd|th)?\s*Year/i);
-    if (!match) return null;
-
-    const targetYear = Number(match[1]);
-    return Number.isFinite(targetYear) ? targetYear : null;
-  };
 
   const normalizeId = (value) => {
     if (value === null || value === undefined || value === '') return null;
@@ -169,9 +154,8 @@ export default function StudentView() {
   // Per-event status, shared by the event list and the summary stats
   const eventStatus = (event) => {
     const att = eventAttendance[event.id];
-    const targetYear = getTargetYearFromEvent(event);
-    const isIncludedByTarget = targetYear === null || Number(student.yearLevel) === targetYear;
-    const hasFineForEvent = fines.some(f => f.eventId === event.id);
+    const isIncludedByTarget = isEventForYear(event, student.yearLevel);
+    const hasFineForEvent = fines.some(f => String(f.eventId) === String(event.id));
     const isLegacySelectiveOnlineEvent =
       !att &&
       !hasFineForEvent &&
@@ -179,6 +163,14 @@ export default function StudentView() {
     const isIncluded = isIncludedByTarget && !isLegacySelectiveOnlineEvent;
     return { att, status: !isIncluded ? 'not_included' : att ? att.status : 'absent' };
   };
+
+  // Only events that apply to this student's year level (or that they already have a record for).
+  const visibleEvents = student
+    ? events.filter((ev) => {
+        const { att, status } = eventStatus(ev);
+        return status !== 'not_included' || !!att || fines.some((f) => String(f.eventId) === String(ev.id));
+      })
+    : [];
 
   const attendanceStats = (() => {
     if (!student) return { rate: 0, attended: 0 };
@@ -358,55 +350,6 @@ export default function StudentView() {
               <Lock className="w-3.5 h-3.5" />
               Your records are private. Only you can view records using your Student ID.
             </p>
-
-            {/* Sample preview */}
-            <section className="mt-10 bg-white/80 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-4 sm:px-6 py-4 flex items-start gap-3 bg-slate-50 border-b border-slate-200">
-                <div className="p-2 rounded-full bg-blue-100 text-blue-600"><Eye className="w-5 h-5" /></div>
-                <div>
-                  <h2 className="font-bold text-slate-900">Sample Preview</h2>
-                  <p className="text-xs text-slate-500">
-                    This is a sample of how your records will look. The data below is for preview purposes only and does not
-                    reflect your actual records.
-                  </p>
-                </div>
-              </div>
-              <div className="p-4 sm:p-6 space-y-5">
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                  <MiniStat icon={PieChart} label="Attendance Rate" value="92%" tone="green" />
-                  <MiniStat icon={Calendar} label="Events Attended" value="12" tone="purple" />
-                  <MiniStat icon={Coins} label="Outstanding Fines" value="₱70.00" tone="red" />
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="font-bold text-slate-900">Recent Attendance Records</h3>
-                    <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-medium">Sample Data</span>
-                  </div>
-                  <div className="overflow-x-auto rounded-xl border border-slate-200">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left">
-                          <th className="px-4 py-2">Date</th>
-                          <th className="px-4 py-2">Event / Class</th>
-                          <th className="px-4 py-2">Status</th>
-                          <th className="px-4 py-2">Remarks</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {SAMPLE_ROWS.map((row, i) => (
-                          <tr key={i} className="border-t border-slate-100">
-                            <td className="px-4 py-2 whitespace-nowrap text-slate-700">{row.date}</td>
-                            <td className="px-4 py-2 text-slate-700">{row.event}</td>
-                            <td className="px-4 py-2"><StatusPill status={row.status} /></td>
-                            <td className="px-4 py-2 text-slate-500">{row.remarks}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </section>
           </>
         )}
 
@@ -472,10 +415,10 @@ export default function StudentView() {
             </SectionCard>
 
             {/* Events Attendance */}
-            {events.length > 0 && (
+            {visibleEvents.length > 0 && (
               <SectionCard id="sec-events" icon={Users} title="Event Records">
                 <div className="space-y-3">
-                  {events.map((event) => {
+                  {visibleEvents.map((event) => {
                     const { att, status } = eventStatus(event);
                     const tone = {
                       present: 'bg-emerald-50/60 border-emerald-200',
@@ -493,7 +436,7 @@ export default function StudentView() {
                             <h4 className="font-semibold text-slate-900">{event.name}</h4>
                             <p className="text-sm text-slate-600 mt-1 flex items-center gap-1.5">
                               <Calendar className="w-4 h-4 text-slate-400" />
-                              {new Date(event.date).toLocaleDateString('en-US', {
+                              {formatEventDate(event.date, {
                                 weekday: 'long',
                                 year: 'numeric',
                                 month: 'long',

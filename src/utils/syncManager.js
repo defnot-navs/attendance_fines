@@ -16,7 +16,20 @@ export function isOnline() {
 /**
  * Sync data to server
  */
-export async function syncToServer() {
+let syncInFlight = null;
+
+export function syncToServer() {
+  // One sync at a time: overlapping runs (auto-sync + manual sync, repeated 'online' events)
+  // would replay the same queue items twice and double-post fines.
+  if (!syncInFlight) {
+    syncInFlight = runSync().finally(() => {
+      syncInFlight = null;
+    });
+  }
+  return syncInFlight;
+}
+
+async function runSync() {
   if (!isOnline()) {
     throw new Error('Cannot sync while offline');
   }
@@ -72,6 +85,12 @@ export async function syncToServer() {
       await markAsSynced(item.id);
       results.synced++;
     } catch (error) {
+      // The server already has this record: nothing left to send.
+      if (/already (recorded|exists)/i.test(error.message || '')) {
+        await markAsSynced(item.id);
+        results.synced++;
+        continue;
+      }
       results.failed++;
       results.errors.push({
         item: item.id,

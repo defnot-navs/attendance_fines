@@ -1,3 +1,4 @@
+import { formatEventDate } from '../utils/eventUtils';
 import React, { useState, useEffect, useRef } from 'react';
 import { Html5QrcodeScanner, Html5Qrcode } from 'html5-qrcode';
 import { parseQRCode } from '../utils/qrParser';
@@ -250,7 +251,7 @@ export default function QRScanner({ selectedEventId }) {
 
       // Record attendance
       try {
-        await recordAttendance(manualStudentId.trim(), 'manual', attendanceStatus, localSelectedEventId, attendanceSession);
+        await recordAttendance(manualStudentId.trim(), 'manual', attendanceStatus, localSelectedEventId, attendanceSession, selectedEvent?.date ? String(selectedEvent.date).slice(0, 10) : null);
         
         // Auto-generate absent fine if applicable
         if (isLate) {
@@ -358,7 +359,7 @@ export default function QRScanner({ selectedEventId }) {
 
       // Record attendance
       try {
-        await recordAttendance(studentId, 'qr', attendanceStatus, localSelectedEventId, attendanceSession);
+        await recordAttendance(studentId, 'qr', attendanceStatus, localSelectedEventId, attendanceSession, selectedEvent?.date ? String(selectedEvent.date).slice(0, 10) : null);
         
         // Auto-generate absent fine if applicable
         if (isLate) {
@@ -492,7 +493,7 @@ export default function QRScanner({ selectedEventId }) {
               <option value="">No event - Record by date only</option>
               {events.map((event) => (
                 <option key={event.id} value={event.id}>
-                  {event.name} - {new Date(event.date).toLocaleDateString()}
+                  {event.name} - {formatEventDate(event.date)}
                   {event.startTime && event.endTime ? ` (${formatTime12Hour(event.startTime)} - ${formatTime12Hour(event.endTime)})` : ''}
                 </option>
               ))}

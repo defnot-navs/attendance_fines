@@ -1,3 +1,4 @@
+import { formatEventDate } from '../utils/eventUtils';
 import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Trash2, ArrowUp } from 'lucide-react';
 import { getAllAttendance, getAllStudents, getAllEvents, deleteAttendance, clearAllAttendance } from '../db/hybridDatabase';
@@ -368,7 +369,7 @@ This action cannot be undone.`)) {
               const count = logs.filter(l => normalizeEventId(l.eventId) === normalizeEventId(event.id)).length;
               return (
                 <option key={event.id} value={String(event.id)}>
-                  {event.name} - {new Date(event.date).toLocaleDateString()} ({count})
+                  {event.name} - {formatEventDate(event.date)} ({count})
                 </option>
               );
             })
