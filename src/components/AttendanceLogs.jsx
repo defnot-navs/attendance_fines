@@ -152,6 +152,35 @@ export default function AttendanceLogs() {
     }
   };
 
+  const handleRemoveFiltered = async () => {
+    const targets = filteredLogs;
+    if (targets.length === 0) return;
+    const eventName = eventFilter === 'all' ? 'All events' : events[eventFilter]?.name || 'Selected event';
+    const typeName = filter === 'all' ? 'all types' : filter.toUpperCase();
+    if (!confirm(`Remove ${targets.length} attendance record(s)?
+
+Event: ${eventName}
+Type: ${typeName}
+
+This action cannot be undone.`)) {
+      return;
+    }
+
+    let failed = 0;
+    for (let i = 0; i < targets.length; i += 5) {
+      const results = await Promise.allSettled(targets.slice(i, i + 5).map(l => deleteAttendance(l.id)));
+      failed += results.filter(r => r.status === 'rejected').length;
+    }
+    setResult({
+      success: failed === 0,
+      message: failed === 0
+        ? `Removed ${targets.length} attendance record(s) (${eventName}, ${typeName})`
+        : `Removed ${targets.length - failed} record(s); ${failed} failed`
+    });
+    await loadData();
+    setTimeout(() => setResult(null), 4000);
+  };
+
   const attendanceColumns = [
     {
       key: 'date',
@@ -250,6 +279,15 @@ export default function AttendanceLogs() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-3">
         <PageHeading icon={Calendar} title="Attendance Logs" />
         <div className="flex gap-2 w-full sm:w-auto">
+          <button
+            onClick={handleRemoveFiltered}
+            disabled={filteredLogs.length === 0 || filteredLogs.length === logs.length}
+            title="Remove only the records matching the current filters"
+            className="bg-orange-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 text-sm flex-1 sm:flex-initial justify-center"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Remove filtered ({filteredLogs.length})</span>
+          </button>
           <button
             onClick={handleRemoveAll}
             disabled={logs.length === 0}

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, CheckCircle, XCircle, DollarSign, Search, CreditCard, Plus, Mail, Trash2, ArrowUp } from 'lucide-react';
+import { Users, CheckCircle, XCircle, DollarSign, Search, CreditCard, Plus, Mail, Trash2, ArrowUp, FileSpreadsheet } from 'lucide-react';
 import { 
   getAllMembershipPayments, 
   initializeMembershipPayments,
@@ -15,6 +15,7 @@ import apiClient from '../services/apiClient';
 import { formatCurrency } from '../utils/finesCalculator';
 import DataTable from './common/DataTable';
 import PageHeading from './common/PageHeading';
+import MembershipImportModal from './MembershipImportModal';
 
 export default function MembershipRegistration() {
   const [payments, setPayments] = useState([]);
@@ -25,6 +26,7 @@ export default function MembershipRegistration() {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [showManualInputModal, setShowManualInputModal] = useState(false);
   const [showNewMemberModal, setShowNewMemberModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [selectedPayment, setSelectedPayment] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     paymentMethod: 'Cash',
@@ -576,6 +578,15 @@ export default function MembershipRegistration() {
             <span className="sm:hidden">Manual</span>
           </button>
           <button
+            onClick={() => setShowImportModal(true)}
+            className="flex items-center justify-center gap-1 sm:gap-2 bg-white text-blue-700 border border-blue-300 px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-50 active:bg-blue-100 text-xs sm:text-sm flex-1 sm:flex-initial touch-manipulation"
+            title="Import membership payments from a CSV or Excel file"
+          >
+            <FileSpreadsheet className="w-4 h-4 sm:w-5 sm:h-5" />
+            <span className="hidden sm:inline">Import File</span>
+            <span className="sm:hidden">Import</span>
+          </button>
+          <button
             onClick={handleInitializePayments}
             className="bg-blue-600 text-white px-3 sm:px-4 py-2 rounded-lg hover:bg-blue-700 active:bg-blue-800 text-xs sm:text-sm w-full sm:w-auto touch-manipulation"
           >
@@ -975,6 +986,17 @@ export default function MembershipRegistration() {
             </div>
           </div>
         </div>
+      )}
+
+      {showImportModal && (
+        <MembershipImportModal
+          payments={payments}
+          academicYear={academicYear}
+          semester={semester}
+          membershipAmount={membershipAmount}
+          onClose={() => setShowImportModal(false)}
+          onDone={loadPayments}
+        />
       )}
 
       {/* New Member Modal */}
