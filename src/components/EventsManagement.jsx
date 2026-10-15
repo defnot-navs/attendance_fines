@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Calendar, Plus, Trash2, CheckCircle, XCircle, UserX, Pencil } from 'lucide-react';
 import { addEvent, getAllEvents, deleteEvent, updateEvent, markRemainingStudentsAbsent } from '../db/hybridDatabase';
-import { YEAR_LEVELS, ordinalYear, formatEventDate, getEventTargetYears, todayLocal } from '../utils/eventUtils';
+import { YEAR_LEVELS, ordinalYear, formatEventDate, getEventTargetYears, suggestTargetYearFromName, todayLocal } from '../utils/eventUtils';
 import { formatTime12Hour } from '../utils/timeFormatter';
 import PageHeading from './common/PageHeading';
 
@@ -417,6 +417,31 @@ export default function EventsManagement({ onEventSelect }) {
                         ? 'All year levels'
                         : getEventTargetYears(event).map(ordinalYear).join(', ')}
                     </p>
+                    {suggestTargetYearFromName(event) && (
+                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded px-2 py-1">
+                        <span>
+                          ⚠ The name says {ordinalYear(suggestTargetYearFromName(event))}, but this event is set to ALL year levels,
+                          so every year level is being fined.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            try {
+                              await updateEvent(event.id, { targetYearLevels: [suggestTargetYearFromName(event)] });
+                              setResult({ success: true, message: `"${event.name}" is now ${ordinalYear(suggestTargetYearFromName(event))} only` });
+                              await loadEvents();
+                              setTimeout(() => setResult(null), 4000);
+                            } catch (err) {
+                              setError(err.message);
+                            }
+                          }}
+                          className="px-2 py-0.5 rounded bg-amber-600 text-white hover:bg-amber-700"
+                        >
+                          Set to {ordinalYear(suggestTargetYearFromName(event))} only
+                        </button>
+                      </div>
+                    )}
                     {(event.startTime || event.lateThreshold || event.endTime) && (
                       <p className="text-xs sm:text-sm text-blue-600 mt-1">
                         🕐 {formatTime12Hour(event.startTime)}

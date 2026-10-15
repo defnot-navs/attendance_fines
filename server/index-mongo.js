@@ -329,6 +329,43 @@ function normalizeEventDate(value) {
   return match ? `${match[1]}-${match[2]}-${match[3]}` : null;
 }
 
+/**
+ * SINGLE eligibility rule used everywhere (attendance, fine creation, fine lists, summaries,
+ * balances, cleanup): a student is in an event's audience when the event has no year-level
+ * target, or the student's year level is one of the targets.
+ */
+async function loadEligibility() {
+  const [students, events] = await Promise.all([
+    Student.find({}, { student_id: 1, year_level: 1 }).lean(),
+    Event.find().lean(),
+  ]);
+  return {
+    yearByStudent: new Map(students.map((s) => [s.student_id, s.year_level])),
+    eventById: new Map(events.map((e) => [toId(e._id), e])),
+  };
+}
+
+function isEligible(ctx, studentId, eventId) {
+  if (eventId === null || eventId === undefined || eventId === '') return true;
+  const event = ctx.eventById.get(String(eventId));
+  if (!event || !ctx.yearByStudent.has(studentId)) return true; // unknown event/student: no basis to exclude
+  return isEventForYear(event, ctx.yearByStudent.get(studentId));
+}
+
+// Unpaid fines outside the student's audience are not valid charges, so they are left out of
+// every list, summary and balance. Paid fines are payment history and are always kept.
+const visibleFines = (ctx, fines) => fines.filter((f) => f.paid || isEligible(ctx, f.student_id, f.event_id));
+
+async function isStudentEligibleForEvent(studentId, eventId) {
+  if (!eventId || !mongoose.isValidObjectId(eventId)) return true;
+  const [student, event] = await Promise.all([
+    Student.findOne({ student_id: studentId }, { year_level: 1 }).lean(),
+    Event.findById(eventId).lean(),
+  ]);
+  if (!student || !event) return true;
+  return isEventForYear(event, student.year_level);
+}
+
 function mostCommon(values) {
   const counts = new Map();
   values.forEach((v) => counts.set(v, (counts.get(v) || 0) + 1));
@@ -796,6 +833,12 @@ app.post('/api/attendance', async (req, res) => {
       return res.status(409).json({ error: 'Attendance already recorded' });
     }
 
+    // Absent/late marks (which carry fines) are meaningless for students outside the event's
+    // audience. A "present" scan is still accepted.
+    if ((status === 'absent' || status === 'late') && !(await isStudentEligibleForEvent(studentId, normalizedEventId))) {
+      return res.json({ success: true, skipped: true });
+    }
+
     await Attendance.create({
       student_id: studentId,
       event_id: normalizedEventId,
@@ -886,6 +929,12 @@ app.post('/api/fines', async (req, res) => {
       if (duplicate) return res.json({ success: true, id: toId(duplicate._id), duplicate: true });
     }
 
+    // Never charge a student for an event outside their year level (QR/manual scans, online
+    // meetings, admin entry and offline-queue replays all come through here).
+    if (!(await isStudentEligibleForEvent(studentId, normalizedEventId))) {
+      return res.json({ success: true, skipped: true, reason: 'Student is not in this event\'s year level' });
+    }
+
     const created = await Fine.create({
       student_id: studentId,
       event_id: normalizedEventId,
@@ -958,7 +1007,7 @@ app.post('/api/fines/cleanup-wrong-year', async (req, res) => {
 app.get('/api/fines/:studentId', async (req, res) => {
   try {
     const rows = await Fine.find({ student_id: req.params.studentId }).sort({ date: -1 }).lean();
-    res.json(rows.map(mapFine));
+    res.json(visibleFines(await loadEligibility(), rows).map(mapFine));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -967,7 +1016,7 @@ app.get('/api/fines/:studentId', async (req, res) => {
 app.get('/api/fines', async (req, res) => {
   try {
     const rows = await Fine.find().sort({ date: -1 }).lean();
-    res.json(rows.map(mapFine));
+    res.json(visibleFines(await loadEligibility(), rows).map(mapFine));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1054,7 +1103,7 @@ app.post('/api/cleanup/no-event-records', async (req, res) => {
 app.get('/api/fines-summary', async (req, res) => {
   try {
     const students = await Student.find().lean();
-    const fines = await Fine.find().lean();
+    const fines = visibleFines(await loadEligibility(), await Fine.find().lean());
 
     const byStudent = new Map();
     for (const fine of fines) {

@@ -56,3 +56,18 @@ export function todayLocal() {
   const pad = (n) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
+
+const NAME_YEAR_WORDS = { first: 1, '1st': 1, second: 2, '2nd': 2, third: 3, '3rd': 3, fourth: 4, '4th': 4 };
+
+/**
+ * An event with NO stored year level whose name says it is for one year (e.g.
+ * "BSIS-JPCS 1st year REPRESENTATIVE ELECTION") is treated as open to everyone, which charges
+ * every year level. Returns the year the name suggests, or null. Never applied automatically.
+ */
+export function suggestTargetYearFromName(event) {
+  const explicit = event?.targetYearLevels ?? event?.target_year_levels;
+  if (Array.isArray(explicit) && explicit.length > 0) return null;
+  if (TARGET_RE.test(`${event?.name || ''} ${event?.description || ''}`)) return null;
+  const match = String(event?.name || '').match(/\b(1st|2nd|3rd|4th|first|second|third|fourth)\s+year/i);
+  return match ? NAME_YEAR_WORDS[match[1].toLowerCase()] : null;
+}
