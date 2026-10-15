@@ -210,6 +210,10 @@ const membershipSchema = new mongoose.Schema(
 // One membership record per student PER TERM (a new academic year must not overwrite the last one).
 membershipSchema.index({ student_id: 1, academic_year: 1, semester: 1 }, { unique: true });
 
+const Setting = mongoose.model('Setting', new mongoose.Schema(
+  { key: { type: String, required: true, unique: true }, value: { type: mongoose.Schema.Types.Mixed } },
+  { versionKey: false }
+));
 const Student = mongoose.model('Student', studentSchema);
 const Event = mongoose.model('Event', eventSchema);
 const Attendance = mongoose.model('Attendance', attendanceSchema);
@@ -1204,34 +1208,123 @@ app.delete('/api/excuses', async (req, res) => {
   }
 });
 
+// ===== ACADEMIC TERM (system-wide setting) =====
+const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
+
+// Philippine calendar: Aug-Dec 1st sem, Jan-May 2nd sem, Jun-Jul summer.
+function computeCurrentTerm(date = new Date()) {
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  if (month >= 7) return { academicYear: `${year}-${year + 1}`, semester: '1st Semester' };
+  if (month <= 4) return { academicYear: `${year - 1}-${year}`, semester: '2nd Semester' };
+  return { academicYear: `${year - 1}-${year}`, semester: 'Summer' };
+}
+
+function isValidAcademicYear(value) {
+  const match = /^(\d{4})-(\d{4})$/.exec(String(value || ''));
+  return Boolean(match) && Number(match[2]) === Number(match[1]) + 1;
+}
+
+async function readAcademicTerm() {
+  const doc = await Setting.findOne({ key: 'academic-term' }).lean();
+  const stored = (doc && doc.value) || {};
+  const computed = computeCurrentTerm();
+  const academicYear = isValidAcademicYear(stored.academicYear) ? stored.academicYear : computed.academicYear;
+  const semester = SEMESTERS.includes(stored.semester) ? stored.semester : computed.semester;
+  const memberYears = await MembershipPayment.distinct('academic_year');
+  const academicYears = [...new Set([academicYear, ...(stored.years || []), ...memberYears])]
+    .filter(isValidAcademicYear)
+    .sort()
+    .reverse();
+  return {
+    academicYear,
+    semester,
+    membershipAmount: Number.isFinite(Number(stored.membershipAmount)) ? Number(stored.membershipAmount) : 100,
+    academicYears,
+    isDefault: !doc,
+  };
+}
+
+// Creates the term's record only where it is missing. Existing records (other terms, or this
+// term with payments already recorded) are never modified.
+async function createMissingMemberships(academicYear, semester, amount) {
+  const students = await Student.find({}, { student_id: 1 }).lean();
+  let created = 0;
+  for (const student of students) {
+    const result = await MembershipPayment.updateOne(
+      { student_id: student.student_id, academic_year: academicYear, semester },
+      {
+        $setOnInsert: {
+          student_id: student.student_id,
+          academic_year: academicYear,
+          semester,
+          amount: Number(amount),
+          paid: false,
+          created_at: new Date(),
+        },
+      },
+      { upsert: true }
+    );
+    if (result.upsertedCount) created++;
+  }
+  return created;
+}
+
+app.get('/api/settings/academic-term', async (req, res) => {
+  try {
+    res.json(await readAcademicTerm());
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/settings/academic-term', async (req, res) => {
+  const { academicYear, semester, membershipAmount, createMemberships } = req.body || {};
+  if (!isValidAcademicYear(academicYear)) {
+    return res.status(400).json({ error: 'Academic year must look like 2026-2027 (consecutive years)' });
+  }
+  if (!SEMESTERS.includes(semester)) {
+    return res.status(400).json({ error: 'Semester must be 1st Semester, 2nd Semester or Summer' });
+  }
+  const amount = membershipAmount === undefined || membershipAmount === '' ? undefined : Number(membershipAmount);
+  if (amount !== undefined && (!Number.isFinite(amount) || amount < 0)) {
+    return res.status(400).json({ error: 'Membership amount must be 0 or higher' });
+  }
+
+  try {
+    const before = await readAcademicTerm();
+    const finalAmount = amount === undefined ? before.membershipAmount : amount;
+    await Setting.updateOne(
+      { key: 'academic-term' },
+      {
+        $set: {
+          value: {
+            academicYear,
+            semester,
+            membershipAmount: finalAmount,
+            years: [...new Set([...before.academicYears, academicYear])],
+          },
+        },
+      },
+      { upsert: true }
+    );
+
+    let membershipsCreated = 0;
+    if (createMemberships) {
+      membershipsCreated = await createMissingMemberships(academicYear, semester, finalAmount);
+    }
+    res.json({ success: true, membershipsCreated, ...(await readAcademicTerm()) });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ===== MEMBERSHIP =====
 app.post('/api/membership/initialize', async (req, res) => {
   const { academicYear, semester, amount } = req.body;
 
   try {
-    const students = await Student.find({}, { student_id: 1 }).lean();
-
-    // Creates the term's record only where it is missing. Existing records (other terms, or this
-    // term with payments already recorded) are never modified.
-    let created = 0;
-    for (const student of students) {
-      const result = await MembershipPayment.updateOne(
-        { student_id: student.student_id, academic_year: academicYear, semester },
-        {
-          $setOnInsert: {
-            student_id: student.student_id,
-            academic_year: academicYear,
-            semester,
-            amount: Number(amount),
-            paid: false,
-            created_at: new Date(),
-          },
-        },
-        { upsert: true }
-      );
-      if (result.upsertedCount) created++;
-    }
-
+    const created = await createMissingMemberships(academicYear, semester, amount);
     res.json({ success: true, count: created });
   } catch (error) {
     res.status(500).json({ error: error.message });

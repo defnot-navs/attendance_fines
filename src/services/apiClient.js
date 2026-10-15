@@ -331,6 +331,17 @@ class APIClient {
 
   // ===== FINE RULES =====
 
+  async getAcademicTerm() {
+    return this.request('/settings/academic-term');
+  }
+
+  async setAcademicTerm(settings) {
+    return this.request('/settings/academic-term', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    });
+  }
+
   async getFineRules() {
     return this.request('/fine-rules');
   }

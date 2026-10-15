@@ -16,7 +16,7 @@ import { formatCurrency } from '../utils/finesCalculator';
 import DataTable from './common/DataTable';
 import PageHeading from './common/PageHeading';
 import MembershipImportModal from './MembershipImportModal';
-import { getInitialTerm, rememberTerm } from '../utils/academicTerm';
+import useAcademicTerm from '../hooks/useAcademicTerm';
 
 export default function MembershipRegistration() {
   const [payments, setPayments] = useState([]);
@@ -60,11 +60,20 @@ export default function MembershipRegistration() {
   });
 
   // Settings
-  const [initialTerm] = useState(getInitialTerm);
-  const [academicYear, setAcademicYear] = useState(initialTerm.academicYear);
-  const [semester, setSemester] = useState(initialTerm.semester);
+  // System-wide current term (Settings > Academic Year). The selectors below can still look at older terms.
+  const { term: systemTerm, loaded: termLoaded } = useAcademicTerm();
+  const [academicYear, setAcademicYear] = useState(systemTerm.academicYear);
+  const [semester, setSemester] = useState(systemTerm.semester);
   const [membershipAmount, setMembershipAmount] = useState(100);
   const [showBackToTop, setShowBackToTop] = useState(false);
+
+  // Follow the system-wide term as soon as the server answers (and whenever it changes).
+  useEffect(() => {
+    if (!termLoaded) return;
+    setAcademicYear(systemTerm.academicYear);
+    setSemester(systemTerm.semester);
+    if (Number.isFinite(systemTerm.membershipAmount)) setMembershipAmount(systemTerm.membershipAmount);
+  }, [termLoaded, systemTerm.academicYear, systemTerm.semester, systemTerm.membershipAmount]);
 
   useEffect(() => {
     loadPayments();
@@ -634,7 +643,7 @@ export default function MembershipRegistration() {
           <input
             type="text"
             value={academicYear}
-            onChange={(e) => { setAcademicYear(e.target.value); rememberTerm({ academicYear: e.target.value, semester }); }}
+            onChange={(e) => setAcademicYear(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm touch-manipulation"
           />
         </div>
@@ -642,7 +651,7 @@ export default function MembershipRegistration() {
           <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Semester</label>
           <select
             value={semester}
-            onChange={(e) => { setSemester(e.target.value); rememberTerm({ academicYear, semester: e.target.value }); }}
+            onChange={(e) => setSemester(e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm touch-manipulation"
           >
             <option>1st Semester</option>

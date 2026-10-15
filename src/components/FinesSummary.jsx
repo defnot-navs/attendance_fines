@@ -1,7 +1,7 @@
 import { formatEventDate } from '../utils/eventUtils';
 import React, { useState, useEffect } from 'react';
 import { DollarSign, TrendingUp, Users, ChevronDown, ChevronRight, Calendar, CheckCircle, XCircle, Trash2, CreditCard, ArrowUp } from 'lucide-react';
-import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, updateAttendance, deleteAttendance, cleanupNoEventRecords, cleanupWrongYearFines, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
+import { getAllStudents, getAllEvents, getAllAttendance, getAllFines, markAllFinesAsPaid, clearAllFines, markFineAsPaid, markFineAsUnpaid, updateFine, deleteFine, getStudentFines, getAllMembershipPayments, getAcademicTerm, updateAttendance, deleteAttendance, cleanupNoEventRecords, cleanupWrongYearFines, getFineRules, recordFine, recordAttendance } from '../db/hybridDatabase';
 import { getAllStudentsFinesSummary, getFinesStatistics, formatCurrency } from '../utils/finesCalculator';
 import { exportToCSV } from '../utils/syncManager';
 import { exportToExcel } from '../utils/excelExport';
@@ -14,6 +14,7 @@ const NO_EVENT_KEY = '__NO_EVENT__';
 export default function FinesSummary() {
   const [summary, setSummary] = useState([]);
   const [statistics, setStatistics] = useState(null);
+  const [membershipTerm, setMembershipTerm] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [events, setEvents] = useState([]);
@@ -58,7 +59,10 @@ export default function FinesSummary() {
       const finesSummary = await getAllStudentsFinesSummary(students);
       
       // Load membership payments
-      const allMembershipPayments = await getAllMembershipPayments();
+      // Membership figures follow the system-wide current term (Settings > Academic Year).
+      const currentTerm = await getAcademicTerm();
+      setMembershipTerm(currentTerm);
+      const allMembershipPayments = await getAllMembershipPayments(currentTerm.academicYear, currentTerm.semester);
       
       // Merge membership fees into summary
       const membershipMap = {};
@@ -1391,6 +1395,11 @@ export default function FinesSummary() {
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <CreditCard className="w-5 h-5" />
               Membership Fees
+              {membershipTerm && (
+                <span className="text-sm font-normal text-gray-500">
+                  {membershipTerm.academicYear} · {membershipTerm.semester}
+                </span>
+              )}
             </h3>
             <p className="text-xs text-gray-500 mb-2">Click a card to view the members and export to Excel or CSV.</p>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

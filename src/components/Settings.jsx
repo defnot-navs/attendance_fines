@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, Database, UserX, Clock, Link2, Info, Copy, Save, Coins } from 'lucide-react';
-import { getFineRules, updateFineRule, initializeSampleData } from '../db/hybridDatabase';
+import { Settings as SettingsIcon, Database, UserX, Clock, Link2, Info, Copy, Save, Coins, CalendarDays } from 'lucide-react';
+import { getFineRules, updateFineRule, initializeSampleData, setAcademicTerm } from '../db/hybridDatabase';
+import useAcademicTerm from '../hooks/useAcademicTerm';
+import { SEMESTERS, isValidAcademicYear } from '../utils/academicTerm';
 import { notify } from '../utils/toast';
 import PageHeading from './common/PageHeading';
 import StatCards from './common/StatCards';
@@ -35,6 +37,172 @@ function Card({ icon: Icon, title, description, children, className = '' }) {
       </div>
       {children}
     </section>
+  );
+}
+
+function AcademicYearCard() {
+  const { term, loaded, reload } = useAcademicTerm();
+  const startYear = Number(String(term.academicYear).slice(0, 4)) || new Date().getFullYear();
+  const [newYear, setNewYear] = useState('');
+  const [newSemester, setNewSemester] = useState('1st Semester');
+  const [amount, setAmount] = useState('');
+  const [createMemberships, setCreateMemberships] = useState(true);
+  const [switchTo, setSwitchTo] = useState('');
+  const [switchSemester, setSwitchSemester] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  // Suggest the year after the current one until the admin types something.
+  const suggestedYear = `${startYear + 1}-${startYear + 2}`;
+  const yearValue = newYear || suggestedYear;
+  const amountValue = amount === '' ? String(term.membershipAmount ?? 100) : amount;
+
+  const apply = async (settings, successText) => {
+    setBusy(true);
+    try {
+      const result = await setAcademicTerm(settings);
+      await reload();
+      notify(
+        result.membershipsCreated
+          ? `${successText} ${result.membershipsCreated} unpaid membership record(s) created.`
+          : successText
+      );
+      return true;
+    } catch (error) {
+      notify('Error: ' + error.message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAdd = async () => {
+    if (!isValidAcademicYear(yearValue)) {
+      notify('Academic year must be two consecutive years, e.g. 2027-2028');
+      return;
+    }
+    if (!confirm(
+      `Set ${yearValue} ${newSemester} as the current academic term for the WHOLE system?\n\n` +
+      `Membership pages and reports will switch to it. Previous terms and their records are kept.`
+    )) return;
+    const ok = await apply(
+      {
+        academicYear: yearValue,
+        semester: newSemester,
+        membershipAmount: Number(amountValue),
+        createMemberships,
+      },
+      `${yearValue} ${newSemester} is now the current term.`
+    );
+    if (ok) {
+      setNewYear('');
+      setAmount('');
+    }
+  };
+
+  const handleSwitch = async () => {
+    const year = switchTo || term.academicYear;
+    const semester = switchSemester || term.semester;
+    if (year === term.academicYear && semester === term.semester) return;
+    if (!confirm(`Switch the current academic term to ${year} ${semester} for the whole system?`)) return;
+    await apply({ academicYear: year, semester }, `Current term is now ${year} ${semester}.`);
+  };
+
+  return (
+    <Card
+      icon={CalendarDays}
+      title="Academic Year"
+      description="The current term used across the system: Membership, the Fines Summary membership figures and imports."
+    >
+      <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 mb-5 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-medium text-blue-700">Current term</p>
+          <p className="text-xl font-bold text-blue-900">
+            {loaded ? `${term.academicYear} · ${term.semester}` : 'Loading…'}
+          </p>
+        </div>
+        <p className="text-xs text-blue-700">Default membership fee: ₱{Number(term.membershipAmount ?? 100).toFixed(2)}</p>
+      </div>
+
+      <h4 className="font-semibold text-slate-900 mb-2">Add a new academic year</h4>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+        <label className="block">
+          <span className="block text-xs font-medium text-slate-600 mb-1">Academic year</span>
+          <input
+            type="text"
+            value={yearValue}
+            onChange={(e) => setNewYear(e.target.value)}
+            placeholder="2027-2028"
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          />
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-slate-600 mb-1">Starting semester</span>
+          <select
+            value={newSemester}
+            onChange={(e) => setNewSemester(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          >
+            {SEMESTERS.map((s) => <option key={s}>{s}</option>)}
+          </select>
+        </label>
+        <label className="block">
+          <span className="block text-xs font-medium text-slate-600 mb-1">Membership fee (₱)</span>
+          <input
+            type="number"
+            min="0"
+            step="10"
+            value={amountValue}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
+          />
+        </label>
+      </div>
+      <label className="flex items-start gap-2 text-sm text-slate-700 mb-3">
+        <input
+          type="checkbox"
+          checked={createMemberships}
+          onChange={(e) => setCreateMemberships(e.target.checked)}
+          className="mt-1"
+        />
+        <span>Create an unpaid membership record for every student in this term (existing records are never changed)</span>
+      </label>
+      <button
+        onClick={handleAdd}
+        disabled={busy || !loaded}
+        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+      >
+        {busy ? 'Saving…' : 'Add & set as current'}
+      </button>
+
+      {(term.academicYears || []).length > 0 && (
+        <div className="mt-6 pt-5 border-t border-slate-200">
+          <h4 className="font-semibold text-slate-900 mb-2">Switch to an existing term</h4>
+          <div className="flex flex-col sm:flex-row gap-3 sm:items-end">
+            <select
+              value={switchTo || term.academicYear}
+              onChange={(e) => setSwitchTo(e.target.value)}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            >
+              {term.academicYears.map((y) => <option key={y}>{y}</option>)}
+            </select>
+            <select
+              value={switchSemester || term.semester}
+              onChange={(e) => setSwitchSemester(e.target.value)}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            >
+              {SEMESTERS.map((s) => <option key={s}>{s}</option>)}
+            </select>
+            <button
+              onClick={handleSwitch}
+              disabled={busy}
+              className="bg-slate-700 text-white px-4 py-2 rounded-lg hover:bg-slate-800 disabled:opacity-50 text-sm font-medium"
+            >
+              Switch
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -120,6 +288,8 @@ export default function Settings() {
 
       <div className="grid grid-cols-1 xl:grid-cols-5 gap-4 sm:gap-5 items-start">
         <div className="xl:col-span-3 space-y-4 sm:space-y-5">
+          <AcademicYearCard />
+
           <Card
             icon={Coins}
             title="Fine Rules"

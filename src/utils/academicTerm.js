@@ -3,7 +3,13 @@
  *   Aug - Dec  -> 1st Semester of  <year>-<year+1>
  *   Jan - May  -> 2nd Semester of  <year-1>-<year>
  *   Jun - Jul  -> Summer of        <year-1>-<year>
+ *
+ * The authoritative current term is the system-wide setting stored on the server
+ * (Settings > Academic Year). This module only provides the calendar fallback and a
+ * device-local cache so pages have a sensible value before/without the server.
  */
+export const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
+
 export function currentAcademicTerm(date = new Date()) {
   const year = date.getFullYear();
   const month = date.getMonth(); // 0 = Jan
@@ -12,14 +18,18 @@ export function currentAcademicTerm(date = new Date()) {
   return { academicYear: `${year - 1}-${year}`, semester: 'Summer' };
 }
 
-const STORAGE_KEY = 'membership.term';
-const SEMESTERS = ['1st Semester', '2nd Semester', 'Summer'];
+export function isValidAcademicYear(value) {
+  const match = /^(\d{4})-(\d{4})$/.exec(String(value || ''));
+  return Boolean(match) && Number(match[2]) === Number(match[1]) + 1;
+}
 
-/** The term the admin last picked on this device, else the current term. */
+const CACHE_KEY = 'academicTerm.cache';
+
+/** Last term received from the server on this device, else the calendar term. */
 export function getInitialTerm() {
   try {
-    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-    if (saved && /^\d{4}-\d{4}$/.test(saved.academicYear) && SEMESTERS.includes(saved.semester)) {
+    const saved = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+    if (saved && isValidAcademicYear(saved.academicYear) && SEMESTERS.includes(saved.semester)) {
       return saved;
     }
   } catch {
@@ -28,9 +38,9 @@ export function getInitialTerm() {
   return currentAcademicTerm();
 }
 
-export function rememberTerm(term) {
+export function cacheTerm(term) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(term));
+    localStorage.setItem(CACHE_KEY, JSON.stringify(term));
   } catch {
     // best effort only
   }

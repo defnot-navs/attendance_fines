@@ -775,6 +775,37 @@ export async function deleteFine(fineId) {
 
 // ===== FINE RULES =====
 
+// ===== ACADEMIC TERM (system-wide) =====
+
+export async function getAcademicTerm() {
+  await checkBackendAvailability();
+  const { getInitialTerm, cacheTerm } = await import('../utils/academicTerm');
+
+  if (backendAvailable) {
+    try {
+      const term = await apiClient.getAcademicTerm();
+      cacheTerm({ academicYear: term.academicYear, semester: term.semester });
+      return term;
+    } catch (error) {
+      console.error('Backend failed, using cached academic term:', error);
+      backendAvailable = false;
+    }
+  }
+
+  return { ...getInitialTerm(), membershipAmount: 100, academicYears: [], isDefault: true };
+}
+
+export async function setAcademicTerm(settings) {
+  await checkBackendAvailability();
+  if (!backendAvailable) {
+    throw new Error('Backend unavailable. Connect to the server to change the academic year.');
+  }
+  const { cacheTerm } = await import('../utils/academicTerm');
+  const result = await apiClient.setAcademicTerm(settings);
+  cacheTerm({ academicYear: result.academicYear, semester: result.semester });
+  return result;
+}
+
 export async function getFineRules() {
   await checkBackendAvailability();
 
