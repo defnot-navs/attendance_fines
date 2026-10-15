@@ -16,6 +16,7 @@ import { formatCurrency } from '../utils/finesCalculator';
 import DataTable from './common/DataTable';
 import PageHeading from './common/PageHeading';
 import MembershipImportModal from './MembershipImportModal';
+import { getInitialTerm, rememberTerm } from '../utils/academicTerm';
 
 export default function MembershipRegistration() {
   const [payments, setPayments] = useState([]);
@@ -59,8 +60,9 @@ export default function MembershipRegistration() {
   });
 
   // Settings
-  const [academicYear, setAcademicYear] = useState('2025-2026');
-  const [semester, setSemester] = useState('1st Semester');
+  const [initialTerm] = useState(getInitialTerm);
+  const [academicYear, setAcademicYear] = useState(initialTerm.academicYear);
+  const [semester, setSemester] = useState(initialTerm.semester);
   const [membershipAmount, setMembershipAmount] = useState(100);
   const [showBackToTop, setShowBackToTop] = useState(false);
 
@@ -632,7 +634,7 @@ export default function MembershipRegistration() {
           <input
             type="text"
             value={academicYear}
-            onChange={(e) => setAcademicYear(e.target.value)}
+            onChange={(e) => { setAcademicYear(e.target.value); rememberTerm({ academicYear: e.target.value, semester }); }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm touch-manipulation"
           />
         </div>
@@ -640,7 +642,7 @@ export default function MembershipRegistration() {
           <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-1">Semester</label>
           <select
             value={semester}
-            onChange={(e) => setSemester(e.target.value)}
+            onChange={(e) => { setSemester(e.target.value); rememberTerm({ academicYear, semester: e.target.value }); }}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm touch-manipulation"
           >
             <option>1st Semester</option>

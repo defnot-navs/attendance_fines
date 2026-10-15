@@ -192,7 +192,7 @@ const excuseSchema = new mongoose.Schema(
 
 const membershipSchema = new mongoose.Schema(
   {
-    student_id: { type: String, required: true, unique: true, index: true },
+    student_id: { type: String, required: true, index: true },
     amount: { type: Number, required: true },
     paid: { type: Boolean, default: false },
     paid_at: { type: Date, default: null },
@@ -206,6 +206,9 @@ const membershipSchema = new mongoose.Schema(
   },
   { versionKey: false }
 );
+
+// One membership record per student PER TERM (a new academic year must not overwrite the last one).
+membershipSchema.index({ student_id: 1, academic_year: 1, semester: 1 }, { unique: true });
 
 const Student = mongoose.model('Student', studentSchema);
 const Event = mongoose.model('Event', eventSchema);
@@ -495,6 +498,18 @@ async function initDatabase() {
 
     dbReady = true;
     console.log('✅ Connected to MongoDB');
+
+    // One-time, idempotent: memberships used to be unique per student (one record ever). Replace
+    // that index with unique-per-term so each academic year / semester gets its own record.
+    try {
+      const indexes = await MembershipPayment.collection.indexes();
+      if (indexes.some((i) => i.name === 'student_id_1' && i.unique)) {
+        await MembershipPayment.collection.dropIndex('student_id_1');
+      }
+      await MembershipPayment.createIndexes();
+    } catch (indexError) {
+      console.warn('Membership index migration skipped:', indexError.message);
+    }
 
     // One-time, idempotent: store the year-level target of legacy events (previously only
     // written into the description as "Target: 1st Year") in the dedicated field.
@@ -1196,23 +1211,28 @@ app.post('/api/membership/initialize', async (req, res) => {
   try {
     const students = await Student.find({}, { student_id: 1 }).lean();
 
+    // Creates the term's record only where it is missing. Existing records (other terms, or this
+    // term with payments already recorded) are never modified.
+    let created = 0;
     for (const student of students) {
-      await MembershipPayment.updateOne(
-        { student_id: student.student_id },
+      const result = await MembershipPayment.updateOne(
+        { student_id: student.student_id, academic_year: academicYear, semester },
         {
-          $set: {
+          $setOnInsert: {
             student_id: student.student_id,
-            amount: Number(amount),
             academic_year: academicYear,
             semester,
+            amount: Number(amount),
+            paid: false,
+            created_at: new Date(),
           },
-          $setOnInsert: { created_at: new Date() },
         },
         { upsert: true }
       );
+      if (result.upsertedCount) created++;
     }
 
-    res.json({ success: true, count: students.length });
+    res.json({ success: true, count: created });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1238,7 +1258,7 @@ app.post('/api/membership/save', async (req, res) => {
 
   try {
     await MembershipPayment.updateOne(
-      { student_id: studentId },
+      { student_id: studentId, academic_year: academicYear, semester },
       {
         $set: {
           student_id: studentId,
